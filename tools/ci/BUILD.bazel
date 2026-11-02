@@ -1,0 +1,17 @@
+load("@bazel_skylib//rules:common_settings.bzl", "bool_flag")
+
+package(default_visibility = ["//visibility:public"])
+
+# Whether the iOS tests (ios_unit_test) build where they can't run: on
+# Linux, for an iOS lease's simulator to run them (tools/ci/ios_lease_tests.sh,
+# `oss machine xctest`). Without it Linux's `bazel test //...` passes over
+# them, as it can't run them; a Mac runs them as ever.
+bool_flag(
+    name = "ios_tests_anywhere",
+    build_setting_default = False,
+)
+
+config_setting(
+    name = "build_ios_tests_anywhere",
+    flag_values = {":ios_tests_anywhere": "true"},
+)

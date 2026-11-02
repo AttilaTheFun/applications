@@ -1,0 +1,16 @@
+load("@rules_swift//swift:swift.bzl", "swift_test")
+load("//tools/swift:defs.bzl", "STRICT_SWIFT")
+
+# How an app chooses a path to its server: every path asked at once, this
+# computer before the LAN before the tailnet, never one waited out before
+# the next is asked; and why each that did not answer did not. The
+# paths are stand-ins that answer or fail when told, so the choice is tested
+# apart from any network.
+#
+#   bazel test //libraries/pipeline_client/tests:pipeline_client_tests
+swift_test(
+    name = "pipeline_client_tests",
+    copts = STRICT_SWIFT,
+    srcs = glob(["*.swift"]),
+    deps = ["//libraries/pipeline_client"],
+)

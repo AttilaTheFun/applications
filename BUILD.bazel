@@ -1,0 +1,18 @@
+package(default_visibility = ["//visibility:public"])
+
+# Where `import SwiftUI` comes from: isomer's label, which is the system
+# framework on Apple's platforms (nothing to link) and Isomer's on the web
+# and Android, as visor's //:swift_ui. A host with a SwiftUI of its own may
+# still set the flag:
+#   --@applications//:swift_ui=@<host>//:swift_ui
+label_flag(
+    name = "swift_ui",
+    build_setting_default = "@isomer//:swift_ui",
+)
+
+# Where `import Foundation` comes from, the same way: the system's on
+# Apple's platforms, Isomer's on the web and Android.
+label_flag(
+    name = "foundation",
+    build_setting_default = "@isomer//:foundation",
+)

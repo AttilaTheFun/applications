@@ -1,0 +1,58 @@
+package(default_visibility = ["//visibility:public"])
+
+# What an app of a server like this one shares, compiled into the app's own
+# module rather than kept as a library: Shared/ for every
+# platform (the connection to the app's server, the views of it); Apple/
+# for what Apple's systems do their own way (the keychain, the pin to the
+# server's authority, the network, an icon's margin), and iOS/, macOS/ for
+# what each of them does (where Settings sits in the toolbar). Another
+# platform's build (on Isomer) supplies its own in their place.
+filegroup(
+    name = "shared",
+    srcs = glob(["Shared/*.swift"]),
+)
+
+filegroup(
+    name = "apple",
+    srcs = glob(["Apple/*.swift"]),
+)
+
+filegroup(
+    name = "ios",
+    srcs = glob(["iOS/*.swift"]),
+)
+
+filegroup(
+    name = "macos",
+    srcs = glob(["macOS/*.swift"]),
+)
+
+# Android's (Keychain, ServerTrust, NetworkWatch, IconImage, the settings
+# toolbar, grouped pages), over //libraries/pipeline_host, the Kotlin
+# host's interface: what the iPhone's and the Mac's Apple and iOS/macOS
+# folders give theirs.
+filegroup(
+    name = "android",
+    srcs = glob(["Android/*.swift"]),
+)
+
+# What every Isomer platform shares (the icon as it is, no network watch,
+# the settings toolbar, grouped pages): with Android's or the web's.
+filegroup(
+    name = "isomer",
+    srcs = glob(["Isomer/*.swift"]),
+)
+
+# Linux's and Windows' (Keychain a file of the user's, the system's trust),
+# on the toolchain's Foundation.
+filegroup(
+    name = "desktop",
+    srcs = glob(["Desktop/*.swift"]),
+)
+
+# The web's (Keychain in the page's storage, the browser's trust): served by
+# the server itself, the page calls its own origin.
+filegroup(
+    name = "web",
+    srcs = glob(["Web/*.swift"]),
+)

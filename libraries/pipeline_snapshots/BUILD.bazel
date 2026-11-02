@@ -1,0 +1,14 @@
+package(default_visibility = ["//visibility:public"])
+
+# What the apps' snapshot tests share: a picture compared with the one
+# kept (or kept anew, recording); on iOS (ios/) a view hosted in a window of
+# a phone's or an iPad's size in the app (the test's host), its navigation
+# titles and how far its lists reach; on the Mac (macos/) a view in a
+# window never shown, and the window's title. One module, PipelineSnapshots,
+# built in a package of each system's (so building both at once does not
+# put two of it in one place).
+filegroup(
+    name = "shared",
+    testonly = True,
+    srcs = glob(["Sources/Shared/*.swift"]),
+)

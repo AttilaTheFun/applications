@@ -1,0 +1,18 @@
+load("@rules_swift//swift:swift.bzl", "swift_test")
+load("//tools/swift:defs.bzl", "STRICT_SWIFT")
+
+# What the server and the app say to each other, tested apart from either:
+# where an installed build stands, a build's title, release notes, channels
+# and betas. Portable, as the protocol is, so Linux runs them too (the
+# server's own tests need a Mac: //tests/server_tests).
+#
+#   bazel test //libraries/applications_protocol/tests:applications_protocol_tests
+swift_test(
+    name = "applications_protocol_tests",
+    copts = STRICT_SWIFT,
+    srcs = glob(["*.swift"]),
+    deps = [
+        "//libraries/applications_protocol",
+        "//libraries/pipeline_client",
+    ],
+)

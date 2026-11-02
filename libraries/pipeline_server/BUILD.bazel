@@ -1,0 +1,18 @@
+load("//tools/swift:defs.bzl", "STRICT_SWIFT")
+load("@rules_swift//swift:swift.bzl", "swift_library")
+
+package(default_visibility = ["//visibility:public"])
+
+# What Applications Server is on its Mac: its own certificate
+# authority and the certificate it issues for every address, the addresses
+# it tells, its password, the pin to another server's authority, and the
+# QR code of its connection link.
+swift_library(
+    name = "pipeline_server",
+    copts = STRICT_SWIFT,
+    srcs = glob(["Sources/*.swift"]),
+    module_name = "PipelineServer",
+    # Security, CryptoKit, CoreImage and SystemConfiguration: the Mac's alone,
+    # as //libraries/pipeline_http is.
+    target_compatible_with = ["@platforms//os:macos"],
+)

@@ -1,0 +1,3 @@
+# Info.plist pieces for the command-line tools and servers that ask a server
+# over HTTPS pinned to its own authority.
+exports_files(["PinnedClient.plist"])

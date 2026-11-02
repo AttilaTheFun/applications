@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Every request these make is pinned to the server's own authority
+	     (PinnedTrust), which this Mac need not trust itself: ATS's own check
+	     would refuse it at any address but 127.0.0.1 (a LAN or tailnet
+	     one), as it did the apps before (docs/SERVER.md). Not
+	     NSAllowsLocalNetworking, which would turn this off again. -->
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsArbitraryLoads</key>
+		<true/>
+	</dict>
+</dict>
+</plist>

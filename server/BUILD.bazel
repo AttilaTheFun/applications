@@ -1,0 +1,38 @@
+load("//tools/swift:defs.bzl", "STRICT_SWIFT")
+load("@rules_apple//apple:macos.bzl", "macos_command_line_application")
+load("@rules_swift//swift:swift.bzl", "swift_library")
+
+# applications-server: runs the server (launchd keeps it running once
+# installed: bazel run -c opt //server -- install), and publishes a build to
+# it.
+swift_library(
+    name = "applications_server_lib",
+    copts = STRICT_SWIFT,
+    srcs = glob(["Sources/*.swift"]),
+    module_name = "ApplicationsServerCommand",
+    deps = [
+        "//libraries/applications_protocol",
+        "//libraries/applications_publish",
+        "//libraries/applications_server",
+        "//libraries/pipeline_client",
+        "//libraries/pipeline_http",
+        "//libraries/pipeline_server",
+    ],
+)
+
+macos_command_line_application(
+    name = "applications_server",
+    bundle_id = "com.LoganShire.ApplicationsServer",
+    # ATS off: what it asks of a server (another's, publishing by its code)
+    # is pinned to that server's own authority.
+    infoplists = ["//tools/plists:PinnedClient.plist"],
+    minimum_os_version = "15.0",
+    deps = [":applications_server_lib"],
+)
+
+# The package's own name, so `bazel build //server` and `bazel run //server
+# -- <command>` name the command line.
+alias(
+    name = "server",
+    actual = ":applications_server",
+)

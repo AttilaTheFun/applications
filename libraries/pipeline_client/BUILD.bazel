@@ -1,0 +1,17 @@
+load("//tools/swift:defs.bzl", "STRICT_SWIFT")
+load("@rules_swift//swift:swift.bzl", "swift_library")
+
+package(default_visibility = ["//visibility:public"])
+
+# What an app needs to reach its server (Applications Server): the
+# connection code, the server's hello, the
+# JSON's coding, and the client over the server's best path, pinned to its
+# authority as the platform does it (ServerPinning). Portable: no Apple
+# framework.
+swift_library(
+    name = "pipeline_client",
+    copts = STRICT_SWIFT,
+    srcs = glob(["Sources/*.swift"]),
+    module_name = "PipelineClient",
+    deps = ["//:foundation"],
+)

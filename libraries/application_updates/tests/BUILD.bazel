@@ -1,0 +1,19 @@
+load("@rules_swift//swift:swift.bzl", "swift_test")
+load("//tools/swift:defs.bzl", "STRICT_SWIFT")
+
+# The shared database across processes (several stores on one file, a write
+# under way while another reads), versions in order, an app's check and what
+# it tells, and installing on each platform, with stand-ins for the
+# notifications and the system. Linux runs them, as the Mac does.
+#
+#   bazel test //libraries/application_updates/tests:application_updates_tests
+#   swift test        # the same, as the Swift package (the root's Package.swift)
+swift_test(
+    name = "application_updates_tests",
+    copts = STRICT_SWIFT,
+    srcs = glob(["*.swift"]),
+    deps = [
+        "//libraries/application_updates",
+        "@swiftpkg_swift_sql//:SwiftSQL",
+    ],
+)

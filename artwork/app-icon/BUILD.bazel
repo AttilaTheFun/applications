@@ -1,0 +1,8 @@
+package(default_visibility = ["//visibility:public"])
+
+# The Icon Composer document the app compiles through `app_icons` (the
+# platform shape and material treatment come from the OS).
+filegroup(
+    name = "app_icon",
+    srcs = glob(["Applications.icon/**"]),
+)

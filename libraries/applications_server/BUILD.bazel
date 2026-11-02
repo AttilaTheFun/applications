@@ -1,0 +1,23 @@
+load("//tools/swift:defs.bzl", "STRICT_SWIFT")
+load("@rules_swift//swift:swift.bzl", "swift_library")
+
+package(default_visibility = ["//visibility:public"])
+
+# The server: HTTP and HTTPS over Network.framework, the published builds,
+# the install manifests, its own certificate authority, and pushes to the
+# app through APNs.
+swift_library(
+    name = "applications_server",
+    copts = STRICT_SWIFT,
+    srcs = glob(["Sources/*.swift"]),
+    module_name = "ApplicationsServer",
+    # CryptoKit, and the Mac's pipeline_http and pipeline_server: the Mac's
+    # alone until the server runs on Linux.
+    target_compatible_with = ["@platforms//os:macos"],
+    deps = [
+        "//libraries/applications_protocol",
+        "//libraries/pipeline_client",
+        "//libraries/pipeline_http",
+        "//libraries/pipeline_server",
+    ],
+)

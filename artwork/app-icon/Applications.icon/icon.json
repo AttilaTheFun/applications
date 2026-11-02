@@ -1,0 +1,51 @@
+{
+  "fill": {
+    "automatic-gradient": "extended-srgb:0.11765,0.61961,0.35294,1.00000"
+  },
+  "groups": [
+    {
+      "layers": [
+        {
+          "image-name": "Badge.svg",
+          "name": "Badge"
+        }
+      ],
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 0.35
+      },
+      "translucency": {
+        "enabled": false,
+        "value": 0
+      },
+      "name": "Badge"
+    },
+    {
+      "layers": [
+        {
+          "image-name": "Front.svg",
+          "name": "Front"
+        },
+        {
+          "image-name": "Cards.svg",
+          "name": "Cards"
+        }
+      ],
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 0.25
+      },
+      "translucency": {
+        "enabled": true,
+        "value": 0.3
+      },
+      "name": "Screens"
+    }
+  ],
+  "supported-platforms": {
+    "circles": [
+      "watchOS"
+    ],
+    "squares": "shared"
+  }
+}

@@ -1,0 +1,23 @@
+load("@rules_swift//swift:swift.bzl", "swift_library", "swift_test")
+load("//tools/swift:defs.bzl", "STRICT_SWIFT")
+
+# What a proof's screens are compared with: a pull request's base branch, a
+# push's commit before, a release's release before (Baseline). CI builds
+# Baseline.swift and main.swift with swiftc on the runner
+# (tools/ci/mac_vm_tests.sh); here the choice is tested, on Linux as the
+# other portable tests are (the linux job's bazel test //...).
+#
+#   bazel test //tools/ci/proof_baseline:baseline_tests
+swift_library(
+    name = "baseline",
+    srcs = ["Baseline.swift"],
+    copts = STRICT_SWIFT,
+    module_name = "ProofBaseline",
+)
+
+swift_test(
+    name = "baseline_tests",
+    srcs = ["BaselineTests.swift"],
+    copts = STRICT_SWIFT,
+    deps = [":baseline"],
+)

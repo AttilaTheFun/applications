@@ -1,0 +1,25 @@
+load("//tools/swift:defs.bzl", "STRICT_SWIFT")
+load("@rules_swift//swift:swift.bzl", "swift_test")
+
+swift_test(
+    name = "server_tests",
+    copts = STRICT_SWIFT,
+    srcs = glob(["*.swift"]),
+    # The apps' Info.plists: their version is the server's, and the iPhone's
+    # query schemes are its own release's (SchemeTests).
+    data = [
+        "//app:Info.ios.plist",
+        "//app:Info.mac.plist",
+    ],
+    # Mac apps' disk images are mounted with hdiutil, which the sandbox
+    # does not allow.
+    tags = ["no-sandbox"],
+    target_compatible_with = ["@platforms//os:macos"],
+    deps = [
+        "//libraries/applications_protocol",
+        "//libraries/applications_server",
+        "//libraries/pipeline_client",
+        "//libraries/pipeline_http",
+        "//libraries/pipeline_server",
+    ],
+)

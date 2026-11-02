@@ -1,0 +1,227 @@
+load("//tools/swift:defs.bzl", "STRICT_SWIFT")
+load("@rules_apple//apple:apple.bzl", "local_provisioning_profile")
+load("@rules_apple//apple:ios.bzl", "ios_application")
+load("@rules_apple//apple:macos.bzl", "macos_application")
+load("@rules_swift//swift:swift.bzl", "swift_library")
+load("@pipeline_signing//:signing.bzl", "TEAM_ID")
+load("//tools/variant:defs.bzl", "variant_infoplist")
+
+package(default_visibility = ["//visibility:public"])
+
+# Change to your own bundle id: the app's one, on the iPhone, the iPad and
+# the Mac, for every build (Alpha, Beta, Production: docs/VARIANTS.md).
+BUNDLE_ID = "com.LoganShire.Applications"
+
+# Which build this is (its Info.plist's BuildVariant), and the name under its
+# icon and its link scheme (applications://), the same for every build.
+variant_infoplist(
+    name = "variant_plist",
+    display_name = "Applications",
+    url_scheme = "applications",
+)
+
+# The apps' Info.plists, for the tests that hold them to the server's version
+# (one version for Applications and its server) and the iPhone's query schemes
+# to the apps' own link schemes (//tests/server_tests).
+exports_files(["Info.ios.plist", "Info.mac.plist"])
+
+# Applications: every app's builds to install (over the air on an iPhone or an
+# iPad, in place on a Mac), its production builds and its betas apart. One
+# SwiftUI app: the views and
+# the store in Sources/Shared, with what an app of its server shares
+# (//libraries/pipeline_app: the connection to the server, and Apple's own
+# keychain, pin and network); the notes' Markdown is AgentUI's MarkdownViews;
+# Sources/iOS, Sources/macOS (installing, notifications, the entry) are
+# Apple's own, which another platform's build (Applications on Isomer)
+# supplies in their place.
+APPLICATIONS_DEPS = [
+    "@swiftpkg_agent_ui//:MarkdownViews",
+    "//libraries/application_updates",
+    "//libraries/applications_protocol",
+    "//libraries/pipeline_client",
+]
+
+swift_library(
+    name = "applications_ios_lib",
+    copts = STRICT_SWIFT,
+    srcs = glob([
+        "Sources/Shared/*.swift",
+        "Sources/iOS/*.swift",
+    ]) + [
+        "//libraries/pipeline_app:apple",
+        "//libraries/pipeline_app:ios",
+        "//libraries/pipeline_app:shared",
+    ],
+    module_name = "ApplicationsApp",
+    deps = APPLICATIONS_DEPS,
+)
+
+# The Mac app's sources but its entry (ApplicationsApp.swift, the @main), for
+# the Mac's tests to compile beside theirs (//tests/mac_tests).
+filegroup(
+    name = "macos_sources_for_tests",
+    testonly = True,
+    srcs = glob(
+        [
+            "Sources/Shared/*.swift",
+            "Sources/macOS/*.swift",
+        ],
+        exclude = ["Sources/macOS/ApplicationsApp.swift"],
+    ) + [
+        "//libraries/pipeline_app:apple",
+        "//libraries/pipeline_app:macos",
+        "//libraries/pipeline_app:shared",
+    ],
+)
+
+swift_library(
+    name = "applications_macos_lib",
+    copts = STRICT_SWIFT,
+    srcs = glob([
+        "Sources/Shared/*.swift",
+        "Sources/macOS/*.swift",
+    ]) + [
+        "//libraries/pipeline_app:apple",
+        "//libraries/pipeline_app:macos",
+        "//libraries/pipeline_app:shared",
+    ],
+    module_name = "ApplicationsApp",
+    deps = APPLICATIONS_DEPS,
+)
+
+# Device signing: the team's development profile for the bundle id, with
+# push notifications and the app group (an explicit App ID; tools/mint_profile
+# in the visor repository makes it with app.entitlements). Simulator builds
+# ignore it.
+local_provisioning_profile(
+    name = "app_profile",
+    profile_name = "iOS Team Provisioning Profile: " + BUNDLE_ID,
+    tags = ["manual"],
+    team_id = TEAM_ID,
+)
+
+# CI's device build (--config=ci_device, .bazelrc): CI holds no profile of
+# the team's, so it signs ad hoc (--ios_signing_cert_name=-) with this
+# placeholder, which allows what app.entitlements asks for. Applications
+# Server replaces both, the profile and the signature, with the bundle id's
+# own (docs/CI.md, "What the server does with each build"). A plain plist:
+# rules_applecross's `security cms -D` off a Mac reads the plist in a
+# profile, so this builds on Linux alone, as CI does. The setting refines
+# the device's alone, so the select below takes it.
+config_setting(
+    name = "ci_device",
+    constraint_values = ["@apple_support//constraints:device"],
+    values = {"ios_signing_cert_name": "-"},
+)
+
+genrule(
+    name = "ci_placeholder_profile",
+    outs = ["ci_placeholder.mobileprovision"],
+    cmd = """cat > $@ <<'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>AppIDName</key>
+	<string>Applications (CI placeholder)</string>
+	<key>ApplicationIdentifierPrefix</key>
+	<array>
+		<string>{team}</string>
+	</array>
+	<key>CreationDate</key>
+	<date>2026-01-01T00:00:00Z</date>
+	<key>DeveloperCertificates</key>
+	<array>
+	</array>
+	<key>Entitlements</key>
+	<dict>
+		<key>application-identifier</key>
+		<string>{team}.*</string>
+		<key>aps-environment</key>
+		<string>development</string>
+		<key>com.apple.developer.team-identifier</key>
+		<string>{team}</string>
+		<key>com.apple.security.application-groups</key>
+		<array>
+			<string>group.com.LoganShire.Applications</string>
+		</array>
+		<key>get-task-allow</key>
+		<true/>
+		<key>keychain-access-groups</key>
+		<array>
+			<string>{team}.*</string>
+		</array>
+	</dict>
+	<key>ExpirationDate</key>
+	<date>2036-01-01T00:00:00Z</date>
+	<key>Name</key>
+	<string>Applications CI placeholder</string>
+	<key>Platform</key>
+	<array>
+		<string>iOS</string>
+	</array>
+	<key>ProvisionedDevices</key>
+	<array>
+	</array>
+	<key>TeamIdentifier</key>
+	<array>
+		<string>{team}</string>
+	</array>
+	<key>TeamName</key>
+	<string>CI placeholder</string>
+	<key>TimeToLive</key>
+	<integer>3652</integer>
+	<key>UUID</key>
+	<string>00000000-0000-4000-8000-0000000000c1</string>
+	<key>Version</key>
+	<integer>1</integer>
+</dict>
+</plist>
+EOF""".format(team = TEAM_ID),
+)
+
+ios_application(
+    name = "applications_ios",
+    app_icons = ["//artwork/app-icon:app_icon"],
+    bundle_id = BUNDLE_ID,
+    bundle_name = "Applications",
+    entitlements = select({
+        "@apple_support//constraints:device": "app.entitlements",
+        "//conditions:default": "app.simulator.entitlements",
+    }),
+    families = [
+        "iphone",
+        "ipad",
+    ],
+    infoplists = [
+        "Info.ios.plist",
+        ":variant_plist",
+    ],
+    minimum_os_version = "18.0",
+    provisioning_profile = select({
+        ":ci_device": ":ci_placeholder_profile",
+        "@apple_support//constraints:device": ":app_profile",
+        "//conditions:default": None,
+    }),
+    deps = [":applications_ios_lib"],
+)
+
+# Signed by tools/install_mac_app.sh with the team's identity.
+# Its entitlements: the app group it shares with the apps it distributes
+# (docs/Updates.md), whose database it writes. On macOS 15 and later a
+# `group.` app group in a Developer ID app is the profile's to grant, which
+# Applications Server embeds when it signs; until the profile grants it, the
+# system asks before the container is opened.
+macos_application(
+    name = "applications_macos",
+    app_icons = ["//artwork/app-icon:app_icon"],
+    bundle_id = BUNDLE_ID,
+    bundle_name = "Applications",
+    entitlements = "app.mac.entitlements",
+    infoplists = [
+        "Info.mac.plist",
+        ":variant_plist",
+    ],
+    minimum_os_version = "15.0",
+    deps = [":applications_macos_lib"],
+)

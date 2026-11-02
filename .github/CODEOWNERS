@@ -1,0 +1,27 @@
+# Pull requests that touch these paths need the code owner's review: CI,
+# what publishes, stamps, signs or notarizes builds, the agents' rules and
+# the license. Anything else may be merged by an agent once CI is green and
+# the branch is up to date with main.
+
+# CI: its workflows, and this file.
+/.github/ @AttilaTheFun
+
+# Publishing, versions and signing; the server's side of it: what CI may
+# publish, its token checked, the builds signed.
+/libraries/applications_server/Sources/APKSignature.swift @AttilaTheFun
+/libraries/applications_server/Sources/ApplicationsServer+CI.swift @AttilaTheFun
+/libraries/applications_server/Sources/CIPolicy.swift @AttilaTheFun
+/libraries/applications_server/Sources/CodeSigning.swift @AttilaTheFun
+/libraries/applications_server/Sources/GitHubOIDC.swift @AttilaTheFun
+/libraries/applications_server/Sources/Signer.swift @AttilaTheFun
+/tools/ci/check_mac_icons.sh @AttilaTheFun
+/tools/ci/connect_from_ci.sh @AttilaTheFun
+/tools/ci/next_version.sh @AttilaTheFun
+/tools/ci/publish_from_ci.sh @AttilaTheFun
+/tools/install_mac_app.sh @AttilaTheFun
+/tools/signing/ @AttilaTheFun
+
+# The agents' rules, anywhere in the tree, and the license.
+AGENTS.md @AttilaTheFun
+CLAUDE.md @AttilaTheFun
+LICENSE @AttilaTheFun

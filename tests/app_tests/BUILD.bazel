@@ -1,0 +1,49 @@
+load("@rules_apple//apple:ios.bzl", "ios_unit_test")
+load("@rules_swift//swift:swift.bzl", "swift_library")
+load("//tools/swift:defs.bzl", "STRICT_SWIFT")
+
+# Applications' screens on a phone and an iPad, in the app itself (the test's
+# host), on its fixture: each compared with its picture kept here
+# (Snapshots/), and their titles and widths checked outright.
+#
+#   bazel test //tests/app_tests
+#   bazel test //tests/app_tests --test_env=SNAPSHOT_RECORD_DIR=$PWD/tests/app_tests/Snapshots
+swift_library(
+    name = "app_tests_lib",
+    testonly = True,
+    # iOS's alone (UIKit): built for the Mac, as a wildcard would, it is not.
+    target_compatible_with = ["@platforms//os:ios"],
+    srcs = glob(["*.swift"]),
+    copts = STRICT_SWIFT,
+    module_name = "ApplicationsAppTests",
+    deps = [
+        "//libraries/pipeline_snapshots/ios:pipeline_snapshots_ios",
+        "//app:applications_ios_lib",
+        "//libraries/applications_protocol",
+    ],
+)
+
+ios_unit_test(
+    name = "app_tests",
+    minimum_os_version = "18.0",
+    # Run by a Mac (its simulator): on Linux, where the app builds,
+    # `bazel test //...` passes over it, unless it's built for an iOS
+    # lease's simulator to run (//tools/ci:ios_tests_anywhere).
+    target_compatible_with = select({
+        "//tools/ci:build_ios_tests_anywhere": [],
+        "//conditions:default": ["@platforms//os:macos"],
+    }),
+    # One app's tests on the simulator at a time: two at once, each
+    # launching its host app, got in each other's way.
+    tags = ["exclusive"],
+    # No simulator diagnostics gathered after a failure: xcodebuild spent
+    # minutes on them, past the test's time, and a failed picture read as
+    # a timeout.
+    args = [
+        "--xcodebuild_args=-collect-test-diagnostics",
+        "--xcodebuild_args=never",
+    ],
+    resources = glob(["Snapshots/*.png"], allow_empty = True),
+    test_host = "//app:applications_ios",
+    deps = [":app_tests_lib"],
+)

@@ -1,0 +1,22 @@
+load("//tools/swift:defs.bzl", "STRICT_SWIFT")
+load("@rules_swift//swift:swift.bzl", "swift_library")
+
+package(default_visibility = ["//visibility:public"])
+
+# ApplicationUpdates: the database Applications and the apps it distributes
+# share in their app group's container (each app's newest build and the one
+# installed), each app's check at launch and its notification, and installing
+# an update (docs/Updates.md). Other repositories take it as a Swift package,
+# from the root's Package.swift, which builds these same sources; Applications
+# links it here. What needs Apple's frameworks is behind canImport, so the
+# store and the decisions build and are tested on Linux too.
+swift_library(
+    name = "application_updates",
+    copts = STRICT_SWIFT,
+    srcs = glob(["Sources/*.swift"]),
+    module_name = "ApplicationUpdates",
+    deps = [
+        "//:foundation",
+        "@swiftpkg_swift_sql//:SwiftSQL",
+    ],
+)

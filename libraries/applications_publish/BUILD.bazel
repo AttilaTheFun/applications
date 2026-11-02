@@ -1,0 +1,19 @@
+load("@rules_swift//swift:swift.bzl", "swift_library")
+load("//tools/swift:defs.bzl", "STRICT_SWIFT")
+
+package(default_visibility = ["//visibility:public"])
+
+# Publishing a build to Applications Server, from this computer or another:
+# what `applications-server publish` does.
+swift_library(
+    name = "applications_publish",
+    copts = STRICT_SWIFT,
+    srcs = glob(["Sources/*.swift"]),
+    module_name = "ApplicationsPublish",
+    deps = [
+        "//libraries/applications_protocol",
+        "//libraries/applications_server",
+        "//libraries/pipeline_client",
+        "//libraries/pipeline_server",
+    ],
+)

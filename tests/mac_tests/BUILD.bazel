@@ -1,0 +1,30 @@
+load("@rules_swift//swift:swift.bzl", "swift_test")
+load("//tools/swift:defs.bzl", "STRICT_SWIFT")
+
+# Applications on the Mac, in a window that is never shown, on its fixture:
+# the window's title as Visor's is (the app's name with nothing open, then the
+# app open), and the window as its kept pictures (Snapshots/). The app's
+# sources but its @main are compiled in.
+#
+#   bazel test //tests/mac_tests --test_env=SNAPSHOT_COMPARE=1
+#   bazel test //tests/mac_tests --strategy=TestRunner=local \
+#       --test_env=SNAPSHOT_RECORD_DIR=$PWD/tests/mac_tests/Snapshots
+#
+# Only a login session's window server draws the sidebar: run from a plain
+# SSH shell, its list is blank (and its background white) while the detail
+# draws. In a leased Mac VM, compare and record in its user's session:
+# `sudo launchctl asuser $(id -u runner) sudo -u runner zsh -lc "cd … && bazel test …"`.
+swift_test(
+    name = "mac_tests",
+    srcs = glob(["*.swift"]) + ["//app:macos_sources_for_tests"],
+    copts = STRICT_SWIFT,
+    data = glob(["Snapshots/*.png"], allow_empty = True),
+    target_compatible_with = ["@platforms//os:macos"],
+    deps = [
+        "@swiftpkg_agent_ui//:MarkdownViews",
+        "//libraries/application_updates",
+        "//libraries/applications_protocol",
+        "//libraries/pipeline_client",
+        "//libraries/pipeline_snapshots/macos:pipeline_snapshots_macos",
+    ],
+)

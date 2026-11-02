@@ -1,0 +1,90 @@
+common --enable_bzlmod
+# Isomer and the forks it needs (rules_swift, swift-foundation) from the
+# project's registry, before the BCR.
+common --registry=https://raw.githubusercontent.com/AttilaTheFun/bazel_registry/main
+common --registry=https://bcr.bazel.build
+# Android: the hermetic SDK and NDK's licenses, the phone's ABI, and Java 17
+# from Bazel's remote JDK (no host JDK).
+common --repo_env=ACCEPTED_ANDROID_NDK_LICENSE_VERSION=r27c
+common --repo_env=ACCEPTED_ANDROID_SDK_LICENSE_VERSION=35
+common --android_platforms=@rules_android//:arm64-v8a
+common --java_language_version=17
+common --java_runtime_version=remotejdk_17
+common --tool_java_language_version=17
+common --tool_java_runtime_version=remotejdk_17
+build --apple_platform_type=macos
+build --macos_minimum_os=15.0
+build --ios_minimum_os=18.0
+build --minimum_os_version=15.0
+build --host_macos_minimum_os=15.0
+# swift_ffi's macro plugin in a sandbox fails; Swift compiles run locally.
+build --strategy=SwiftCompile=local
+# Isomer's Foundation with FoundationInternationalization (dates, numbers
+# and lists formatted as on Apple's platforms).
+build --@isomer//foundation:internationalization
+# Which of an app's builds (docs/VARIANTS.md), its Info.plist's BuildVariant:
+# Alpha, the default (every main and pull request build), Beta (TestFlight's,
+# for later), Production, which only CI's release job builds, on a release
+# branch, or AdHoc, a pull request's branch built by hand (CI's adhoc job).
+# One bundle id, name and link scheme for all of them.
+build:alpha --//tools/variant:variant=alpha
+build:beta --//tools/variant:variant=beta
+build:prod --//tools/variant:variant=production
+build:adhoc --//tools/variant:variant=adhoc
+# CI's iPhone and iPad app: a device build, signed ad hoc with a placeholder
+# profile (app/BUILD.bazel), which Applications Server signs again with the
+# team's identity and the bundle id's profile when it is published.
+build:ci_device --ios_multi_cpus=arm64
+build:ci_device --ios_signing_cert_name=-
+# Your own settings, such as the signing team (tools/signing).
+try-import %workspace%/.bazelrc.user
+
+# The apps' iOS tests (their snapshot tests, in the app as host) run on an
+# iPhone 17 simulator with iOS 27, the runtime Xcode has here.
+# `bazel test //...` builds the tests and what they need, each on its own
+# platform: the apps themselves, whose iOS and Mac libraries share a module
+# name, are not built side by side.
+test --build_tests_only
+test --ios_simulator_device="iPhone 17" --ios_simulator_version=27.2
+
+# Linux and Windows, Isomer's desktop hosts (as isomer's examples set them):
+# clang for the Swift toolchain's C, glib's and dbus's multiarch headers for
+# the Linux web view, the swift_ffi tools unsandboxed, and Windows' PATH.
+common --enable_platform_specific_config
+build:windows --spawn_strategy=local
+build:linux --repo_env=CC=clang
+build:linux --repo_env=CXX=clang++
+build:linux --repo_env=C_INCLUDE_PATH=/usr/lib/glib-2.0/include:/usr/lib/dbus-1.0/include:/usr/lib/x86_64-linux-gnu/glib-2.0/include:/usr/lib/x86_64-linux-gnu/dbus-1.0/include:/usr/lib/aarch64-linux-gnu/glib-2.0/include:/usr/lib/aarch64-linux-gnu/dbus-1.0/include
+build:linux --action_env=C_INCLUDE_PATH=/usr/lib/glib-2.0/include:/usr/lib/dbus-1.0/include:/usr/lib/x86_64-linux-gnu/glib-2.0/include:/usr/lib/x86_64-linux-gnu/dbus-1.0/include:/usr/lib/aarch64-linux-gnu/glib-2.0/include:/usr/lib/aarch64-linux-gnu/dbus-1.0/include
+build:linux --strategy=SwiftFFIAnalyze=local
+build:linux --strategy=SwiftFFIGenerate=local
+build:windows --action_env=Path
+build:windows --action_env=PATH
+
+# The Apple apps and the server built on Linux with rules_applecross
+# (MODULE.bazel), as isomer and visor are, on a builder that has Xcode
+# 27.2's SDK archive: tools/ci/container_build.sh, in a container leased
+# from OS Server, or a builder whose .bazelrc.user says where the archive is
+# (`--distdir`, or a `--downloader_config` to an OS Server) and turns this
+# on with `build:linux --config=apple_on_linux`. Without it Linux builds
+# what runs on Linux alone, and nothing fetches the SDKs. Its toolchains
+# (the clean-room Apple tools, LLD, the Swift that built the SDKs) take the
+# Apple targets; the host's own C and Swift toolchains still build what
+# runs on Linux; rules_apple's own actions find the staged tools by
+# DEVELOPER_DIR and PATH. Off a Mac a Mac app is arm64 and an iPhone app
+# the arm64 simulator's (rules_applecross's patch to rules_apple); a device
+# build says --ios_multi_cpus=arm64, as on a Mac. A Mac builds as before,
+# with its own Xcode.
+startup --host_jvm_args=-DBAZEL_TRACK_SOURCE_DIRECTORIES=1
+common --incompatible_repo_env_ignores_action_env
+common:linux --repo_env=BAZEL_NO_APPLE_CPP_TOOLCHAIN=1
+build:apple_on_linux --extra_toolchains=@apple_cross_toolchain//:all
+build:apple_on_linux --xcode_version_config=@apple_cross_toolchain//:host_xcodes
+build:apple_on_linux --@rules_apple//apple:sdk_tool_files=@apple_cross_toolchain//:sdk_tool_files
+build:apple_on_linux --action_env=DEVELOPER_DIR=external/rules_applecross++apple_cross_toolchain+apple_cross_toolchain/Xcode.app/Contents/Developer
+build:apple_on_linux --action_env=PATH=external/rules_applecross++apple_cross_toolchain+apple_cross_toolchain/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin:/bin:/usr/bin:/usr/local/bin
+# Its clean-room tools are byte for byte Xcode's, or refuse, but for the
+# deviations accepted here, each by name (rules_applecross's README,
+# "relax_*"): an Icon Composer icon's flattened images, which aren't Xcode's
+# (its layers and appearances are, which macOS and iOS 26 and later draw).
+build:apple_on_linux --action_env=RULES_APPLECROSS_RELAX_ACTOOL_ICON_COMPOSER=1

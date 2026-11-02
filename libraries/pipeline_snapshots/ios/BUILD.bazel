@@ -1,0 +1,14 @@
+load("@rules_swift//swift:swift.bzl", "swift_library")
+load("//tools/swift:defs.bzl", "STRICT_SWIFT")
+
+package(default_visibility = ["//visibility:public"])
+
+swift_library(
+    name = "pipeline_snapshots_ios",
+    testonly = True,
+    # iOS's alone (UIKit): built for the Mac, as a wildcard would, it is not.
+    target_compatible_with = ["@platforms//os:ios"],
+    srcs = ["//libraries/pipeline_snapshots:shared"] + glob(["Sources/*.swift"]),
+    copts = STRICT_SWIFT,
+    module_name = "PipelineSnapshots",
+)

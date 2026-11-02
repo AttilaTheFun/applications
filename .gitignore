@@ -1,0 +1,10 @@
+.DS_Store
+.bazelrc.user
+bazel-*
+__pycache__/
+# SwiftPM's own scratch (rules_swift_package_manager resolves there).
+.build/
+# tools/ci/container_build.sh's downloader config (an OS Server's address).
+/.ci/
+# The root package's resolution: a library's, left to the apps that take it.
+/Package.resolved

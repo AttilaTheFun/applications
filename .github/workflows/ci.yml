@@ -1,0 +1,262 @@
+name: CI
+# Applications' CI, on self-hosted runners that lease what each job runs in
+# from OS Server (docs/CI.md): mac-tests on OS Server's own single-use ones
+# (applications-jit: a Linux container per job, its Mac work in a leased
+# VM), the rest on the owner's Mac's (applications-ci, a user of its own),
+# whose builds mount its checkout:
+# - linux: every target built in a Linux container, then the tests Linux
+#   can run (tools/ci/container_build.sh);
+# - mac-tests, after a merge: the tests that need a Mac, in a macOS VM
+#   (tools/ci/mac_vm_tests.sh);
+# - ios-tests: the iPhone and iPad tests built on Linux and run on an iOS
+#   lease's simulator (tools/ci/ios_lease_tests.sh), and, run by hand
+#   only (to propose a release, or on a branch pushed at an earlier commit
+#   to bisect), the proof: every iPhone and iPad screen, and how each
+#   differs from its picture at the release before the commit (fetched by
+#   the script). A pull request's run and a push's only build and test,
+#   comparing with the kept pictures: no proof, nothing recorded. No
+#   release without its commit's proof;
+# - beta: the Alpha (--config=alpha) for each commit on main, never a pull
+#   request's: its version asked of Applications Server and stamped in
+#   (tools/ci/next_version.sh), the Mac app and the iPhone and iPad app
+#   built in a Linux container (tools/ci/container_build.sh package), the
+#   Mac's icon checked for the dark appearance (tools/ci/check_mac_icons.sh),
+#   unsigned, and published to the server, which signs them (and notarizes
+#   the Mac's);
+# - adhoc: the same with --config=adhoc for a pull request's branch run by
+#   hand (workflow_dispatch), which the server takes as an AdHoc build;
+# - release: the same with --config=prod for a push to a release branch
+#   (release-MAJOR-MINOR, cut from a main commit), which the server takes as
+#   production. One bundle id for every build (docs/VARIANTS.md).
+# No signing key, notary key or password here: the publishing jobs' OIDC
+# token says where their builds came from, and which commit's version
+# they are given.
+# A pull request's run is linux and ios-tests, the Linux build and the fast
+# suites, in under ten minutes; the beta and the tests that need a Mac are
+# main's (2026-10-31), the proof by hand alone (2026-11-01). Each container job keeps its Bazel
+# tree in a volume of its own (applications-ci-linux, -ios, -beta), which
+# one runner uses one job at a time.
+on:
+  pull_request:
+  push:
+    # main's commits, and the owner's releases: a release-MAJOR-MINOR branch,
+    # cut from a main commit.
+    branches: [main, 'release-*']
+  # A proof by hand (ios-tests).
+  workflow_dispatch:
+# A pull request's newer push cancels its older run; every push to main and
+# to a release branch runs to the end, each in a group of its own: GitHub
+# keeps one pending run a group and cancels the rest, so a shared group
+# would lose a queued main commit's Alpha.
+concurrency:
+  group: ${{ github.event_name == 'pull_request' && format('ci-pr-{0}', github.event.pull_request.number) || format('ci-{0}', github.run_id) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    # A self-hosted runner never runs a fork's code.
+    if: >
+      github.event_name == 'push' ||
+      (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: [self-hosted, applications-ci]
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          # A pull request's own head, not GitHub's merge of it: the commit
+          # its builds, tests and proof are listed under.
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      # exec: the runner's cancel reaches oss, which ends the build and
+      # releases the container.
+      - run: exec tools/ci/container_build.sh
+        env:
+          # Bazel's tree kept between runs (a job's own volume), so a run
+          # builds what changed, not everything.
+          APPLICATIONS_CI_VOLUME: applications-ci-linux
+
+  mac-tests:
+    # After a merge to main (or by hand) alone: a pull request's run is the
+    # Linux build and the fast suites (2026-10-31), and the tests
+    # that need a Mac take a VM and a cold build.
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: [self-hosted, applications-jit]
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: The tests that need a Mac, in a macOS VM
+        # exec: the runner's cancel reaches the script's trap, which releases the VM.
+        run: exec tools/ci/mac_vm_tests.sh --logs "$RUNNER_TEMP/test-logs"
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: test-logs
+          path: ${{ runner.temp }}/test-logs
+          retention-days: 30
+          if-no-files-found: ignore
+
+  ios-tests:
+    if: >
+      github.event_name == 'push' || github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: [self-hosted, applications-ci]
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Tests built on Linux, run on an iOS lease, and (by hand) the proof
+        env:
+          # The branch, for a pull request's head (its run's ref is GitHub's merge).
+          PROOF_REF: ${{ github.event.pull_request && format('refs/heads/{0}', github.head_ref) || github.ref }}
+          PROOF_KIND: ${{ github.event_name == 'workflow_dispatch' && 'full' || 'quick' }}
+          # The tests' build keeps its Bazel tree between runs (its own volume).
+          APPLICATIONS_CI_VOLUME: applications-ci-ios
+        # A pull request's run and a push's build and test, no more; one by
+        # hand makes the proof, against the release before the commit.
+        # exec: the runner's cancel reaches the script's trap, which releases the lease.
+        run: |
+          proof=()
+          [ "$GITHUB_EVENT_NAME" != workflow_dispatch ] || proof=(--proof "$RUNNER_TEMP/proof")
+          exec tools/ci/ios_lease_tests.sh --kind "$PROOF_KIND" "${proof[@]}" --logs "$RUNNER_TEMP/ios-test-logs"
+      # The proof whether the tests pass or not: a failing screen is what it's for.
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() && github.event_name == 'workflow_dispatch' }}
+        with:
+          name: proof
+          path: ${{ runner.temp }}/proof
+          retention-days: 90
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: ios-test-logs
+          path: ${{ runner.temp }}/ios-test-logs
+          retention-days: 30
+          if-no-files-found: ignore
+
+  beta:
+    # After linux: nothing published from a tree that doesn't build.
+    needs: linux
+    # The Alpha of each commit on main, never a pull request's (2026-10-31)
+    # nor a release branch's (release, below).
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: [self-hosted, applications-ci]
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      # The OIDC token Applications Server checks.
+      id-token: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      # The build's version, 0.10.N: the next of the committed line for the
+      # token's commit, from Applications Server, stamped into the
+      # checkout's Info.plists before the build and never committed.
+      - name: Version
+        env:
+          APPLICATIONS_CI_CODE: ${{ secrets.APPLICATIONS_CI_CODE }}
+        run: tools/ci/next_version.sh Applications app/Info.mac.plist app/Info.ios.plist
+      # The Mac app and the iPhone and iPad app, built in a Linux container,
+      # as everything else is, with rules_applecross's actool, which
+      # compiles the Icon Composer icon's dark and tinted appearances. The
+      # iPhone's is a device build signed ad hoc with a placeholder profile
+      # (--config=ci_device: CI holds none of the team's), which the server
+      # signs again with the bundle id's own (docs/CI.md). exec: the
+      # runner's cancel reaches oss, which ends the build and releases the
+      # container.
+      - name: Build
+        env:
+          APPLICATIONS_CI_VOLUME: applications-ci-beta
+        run: exec tools/ci/container_build.sh package .ci/packages --config=alpha --config=ci_device //app:applications_macos //app:applications_ios
+      # Nothing is published if the icon has no dark appearance.
+      - name: The icon's dark appearance
+        run: tools/ci/check_mac_icons.sh .ci/packages
+      # Untrusted text reaches the shell through env, never ${{ }} in run.
+      - name: Notes
+        env:
+          SUMMARY: ${{ github.event.pull_request.title || github.event.head_commit.message }}
+        run: printf '%s\n' "$SUMMARY" > "$RUNNER_TEMP/notes.md"
+      - name: Publish
+        env:
+          APPLICATIONS_CI_CODE: ${{ secrets.APPLICATIONS_CI_CODE }}
+          APPLICATIONS_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: tools/ci/publish_from_ci.sh --notes-file "$RUNNER_TEMP/notes.md" .ci/packages/*.zip .ci/packages/*.ipa
+
+  # AdHoc: a pull request's branch built by hand (workflow_dispatch on a
+  # branch that is neither main nor a release branch), the Mac app and the
+  # iPhone and iPad app built as beta's are with --config=adhoc and
+  # published; the server takes them as AdHoc builds, kept a week
+  # (docs/VARIANTS.md). Not after linux, which runs for pushes and pull
+  # requests alone: the build itself stops a tree that doesn't build.
+  adhoc:
+    if: >
+      github.event_name == 'workflow_dispatch' &&
+      github.ref != 'refs/heads/main' && !startsWith(github.ref, 'refs/heads/release-')
+    runs-on: [self-hosted, applications-ci]
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v5
+      - name: Version
+        env:
+          APPLICATIONS_CI_CODE: ${{ secrets.APPLICATIONS_CI_CODE }}
+        run: tools/ci/next_version.sh Applications app/Info.mac.plist app/Info.ios.plist
+      - name: Build
+        env:
+          APPLICATIONS_CI_VOLUME: applications-ci-adhoc
+        run: exec tools/ci/container_build.sh package .ci/packages --config=adhoc --config=ci_device //app:applications_macos //app:applications_ios
+      - name: The icon's dark appearance
+        run: tools/ci/check_mac_icons.sh .ci/packages
+      # The branch's commit's message, from git: a run by hand has no
+      # head_commit in its event.
+      - name: Notes
+        run: git log -1 --format=%B > "$RUNNER_TEMP/notes.md"
+      - name: Publish
+        env:
+          APPLICATIONS_CI_CODE: ${{ secrets.APPLICATIONS_CI_CODE }}
+        run: tools/ci/publish_from_ci.sh --notes-file "$RUNNER_TEMP/notes.md" .ci/packages/*.zip .ci/packages/*.ipa
+
+  # Production, from a push to a release branch (release-MAJOR-MINOR) the
+  # owner cut from a main commit: the server takes the token's ref
+  # (refs/heads/release-*) as production.
+  release:
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/heads/release-')
+    runs-on: [self-hosted, applications-ci]
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      # The release branch's commit, with main's history beside it.
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      # A release is a main commit: a branch whose commit isn't on main
+      # stops here.
+      - name: The release is a main commit
+        run: git merge-base --is-ancestor HEAD origin/main || { echo "::error::$GITHUB_REF_NAME's commit is not on main"; exit 1; }
+      # From the same line as the Alphas: the release's commit is main's, so
+      # the release is given the version main's Alpha of it was.
+      - name: Version
+        env:
+          APPLICATIONS_CI_CODE: ${{ secrets.APPLICATIONS_CI_CODE }}
+        run: tools/ci/next_version.sh Applications app/Info.mac.plist app/Info.ios.plist
+      # In a Linux container, as beta's, the Mac's icon checked the same way.
+      - name: Build
+        run: exec tools/ci/container_build.sh package .ci/packages --config=prod --config=ci_device //app:applications_macos //app:applications_ios
+      - name: The icon's dark appearance
+        run: tools/ci/check_mac_icons.sh .ci/packages
+      - name: Notes
+        env:
+          BODY: ${{ github.event.head_commit.message }}
+        run: printf '%s\n' "$BODY" > "$RUNNER_TEMP/notes.md"
+      - name: Publish
+        env:
+          APPLICATIONS_CI_CODE: ${{ secrets.APPLICATIONS_CI_CODE }}
+        run: tools/ci/publish_from_ci.sh --notes-file "$RUNNER_TEMP/notes.md" .ci/packages/*.zip .ci/packages/*.ipa
