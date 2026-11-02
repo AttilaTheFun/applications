@@ -51,12 +51,18 @@ connect_from_ci() {
     curl -sk --connect-timeout 5 --max-time 10 -o /dev/null "$address/api/hello" || continue
     host_port="${address#https://}"
     host_port="${host_port%%/*}"
-    openssl s_client -connect "$host_port" -showcerts </dev/null 2>/dev/null \
+    # An address openssl can't reach (macOS's local network privacy can
+    # let curl through and not openssl) is passed over for the next: under
+    # `set -e -o pipefail` its failure would end the script here.
+    if ! { openssl s_client -connect "$host_port" -showcerts </dev/null 2>/dev/null || true; } \
       | awk '/-----BEGIN CERTIFICATE-----/ { block = ""; inside = 1 }
              inside { block = block $0 "\n" }
              /-----END CERTIFICATE-----/ { inside = 0; last = block }
-             END { printf "%s", last }' > "$work/ca.pem"
-    fingerprint="$(openssl x509 -in "$work/ca.pem" -outform DER 2>/dev/null | openssl dgst -sha256 | sed 's/.*= *//' | tr 'A-F' 'a-f')"
+             END { printf "%s", last }' > "$work/ca.pem" || [ ! -s "$work/ca.pem" ]; then
+      echo "$(basename "$0" .sh): $address presents no certificate to openssl; not used" >&2
+      continue
+    fi
+    fingerprint="$( { openssl x509 -in "$work/ca.pem" -outform DER 2>/dev/null || true; } | openssl dgst -sha256 | sed 's/.*= *//' | tr 'A-F' 'a-f')"
     if [ "$fingerprint" = "$ca" ]; then
       server="$address"
       break
