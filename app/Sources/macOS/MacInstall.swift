@@ -12,7 +12,9 @@ enum MacInstall {
         init(_ text: String) { errorDescription = text }
     }
 
-    static func install(zip: URL, build: Build) async throws {
+    /// `earlier`: the app's bundle ids from before one bundle id an app,
+    /// whose copy under its name the build replaces (InstalledApps).
+    static func install(zip: URL, build: Build, earlier: Set<String> = []) async throws {
         let folder = zip.deletingLastPathComponent().appendingPathComponent("unzipped", isDirectory: true)
         try? FileManager.default.removeItem(at: folder)
         try run("/usr/bin/ditto", ["-x", "-k", zip.path, folder.path])
@@ -22,14 +24,24 @@ enum MacInstall {
         guard Bundle(url: new)?.bundleIdentifier == build.bundleID else { throw Failure("The build is not \(build.name).") }
         try checkSignature(of: new)
 
-        let destination = InstalledApps.location(bundleID: build.bundleID, name: build.name)
+        let destination = InstalledApps.destination(bundleID: build.bundleID, name: build.name, earlier: earlier)
+        // An earlier bundle id's copy where the build goes: quit, and to the Trash.
+        if let there = Bundle(url: destination)?.bundleIdentifier, there != build.bundleID {
+            try await quit(bundleID: there, name: build.name)
+            try FileManager.default.trashItem(at: destination, resultingItemURL: nil)
+        }
         if build.bundleID == Bundle.main.bundleIdentifier {
-            try replaceSelf(at: Bundle.main.bundleURL, with: new)
+            try replaceSelf(at: destination, old: Bundle.main.bundleURL, with: new)
             return
         }
+        let current = InstalledApps.current(bundleID: build.bundleID, name: build.name)
         let running = try await quit(bundleID: build.bundleID, name: build.name)
         if FileManager.default.fileExists(atPath: destination.path) {
             try FileManager.default.trashItem(at: destination, resultingItemURL: nil)
+        }
+        // Its copy under another name (`<name> (<id>).app`): one copy, under its own.
+        if let current, current.standardizedFileURL != destination.standardizedFileURL, FileManager.default.fileExists(atPath: current.path) {
+            try FileManager.default.trashItem(at: current, resultingItemURL: nil)
         }
         try FileManager.default.moveItem(at: new, to: destination)
         if !running.isEmpty {
@@ -39,8 +51,8 @@ enum MacInstall {
 
     /// Quits the app if it is running and moves it to the Trash.
     static func uninstall(bundleID: String, name: String) async throws {
-        let location = InstalledApps.location(bundleID: bundleID, name: name)
-        guard FileManager.default.fileExists(atPath: location.path) else { return }
+        guard let location = InstalledApps.current(bundleID: bundleID, name: name),
+              FileManager.default.fileExists(atPath: location.path) else { return }
         try await quit(bundleID: bundleID, name: name)
         try FileManager.default.trashItem(at: location, resultingItemURL: nil)
     }
@@ -82,14 +94,17 @@ enum MacInstall {
     }
 
     /// Applications cannot replace itself while it runs: a shell waits for it
-    /// to quit, swaps the bundles and opens the new one.
-    private static func replaceSelf(at destination: URL, with new: URL) throws {
+    /// to quit, puts the new one at `destination`, takes away the copy it ran
+    /// from (`old`) if that was elsewhere (under its id's name), and opens
+    /// the new one.
+    private static func replaceSelf(at destination: URL, old: URL, with new: URL) throws {
         let staged = destination.deletingLastPathComponent().appendingPathComponent(".Applications-new-\(UUID().uuidString).app")
         try FileManager.default.moveItem(at: new, to: staged)
         let pid = ProcessInfo.processInfo.processIdentifier
+        let removeOld = old.standardizedFileURL == destination.standardizedFileURL ? "" : "rm -rf \"\(old.path)\" && "
         let script = """
         while kill -0 \(pid) 2>/dev/null; do sleep 0.2; done
-        rm -rf "\(destination.path)" && mv "\(staged.path)" "\(destination.path)" && open "\(destination.path)"
+        \(removeOld)rm -rf "\(destination.path)" && mv "\(staged.path)" "\(destination.path)" && open "\(destination.path)"
         """
         let helper = Process()
         helper.executableURL = URL(fileURLWithPath: "/bin/sh")

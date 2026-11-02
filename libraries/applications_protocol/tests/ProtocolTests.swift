@@ -84,6 +84,16 @@ final class ProtocolTests: XCTestCase {
         XCTAssertEqual(alpha.listedState(here: nil, installed: said("0.43.114")), .open, "no scheme to ask: taken at its word")
     }
 
+    /// An app's bundle ids from before one bundle id an app: its beta's,
+    /// and on a Mac its `.Mac` and `.Mac.Beta`; nothing else.
+    func testAnAppsEarlierBundleIDs() {
+        let id = "com.example.Applications"
+        for old in [id + ".Beta", id + ".Mac", id + ".Mac.Beta"] { XCTAssertTrue(BundleVariant.isEarlierID(old, of: id), old) }
+        for other in [id, "com.example.Visor", id + ".Widget", "com.example.ApplicationsServer"] {
+            XCTAssertFalse(BundleVariant.isEarlierID(other, of: id), other)
+        }
+    }
+
     /// From 0.38 a build is a version of its own, and says only that: an
     /// Apple build's number is 1, an Android build's versionCode the
     /// version as a number (0.38.1 is 38001). Before, the version and the

@@ -55,7 +55,7 @@ final class DeviceInstalls {
 
     /// Opens the app where it is installed: nil when it has opened, else why not.
     func open(_ app: AppBuilds) async -> String? {
-        let location = InstalledApps.location(bundleID: app.bundleID, name: app.name)
+        guard let location = InstalledApps.current(bundleID: app.bundleID, name: app.name) else { return "\(app.name) is not installed." }
         do {
             _ = try await NSWorkspace.shared.openApplication(at: location, configuration: NSWorkspace.OpenConfiguration())
             return nil
@@ -64,8 +64,19 @@ final class DeviceInstalls {
         }
     }
 
+    /// Every bundle id the catalog has, by its app's name.
+    private var idsByName: [String: Set<String>] = [:]
+
+    /// The app's other bundle ids in the catalog, under its name: its
+    /// builds from before one bundle id an app (`<id>.Mac`, say), whose copy
+    /// an install replaces.
+    private func earlierIDs(of build: Build) -> Set<String> {
+        (idsByName[build.name] ?? []).subtracting([build.bundleID])
+    }
+
     func refresh(_ apps: [AppBuilds]) {
         groups = Dictionary(grouping: apps, by: \.bundleID)
+        idsByName = apps.reduce(into: [:]) { $0[$1.name, default: []].insert($1.bundleID) }
         var found: [String: InstalledBuild] = [:]
         for app in apps { found[app.bundleID] = InstalledApps.installed(bundleID: app.bundleID, name: app.name) }
         installed = found
@@ -111,7 +122,7 @@ final class DeviceInstalls {
         do {
             let zip = folder.appendingPathComponent("app.zip")
             try await client.download("/builds/\(build.id)/\(build.downloadKey)/app.zip", at: address, to: zip)
-            try await MacInstall.install(zip: zip, build: build)
+            try await MacInstall.install(zip: zip, build: build, earlier: earlierIDs(of: build))
         } catch {
             return error.localizedDescription
         }

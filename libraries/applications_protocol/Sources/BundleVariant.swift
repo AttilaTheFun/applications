@@ -25,4 +25,11 @@ public enum BundleVariant {
         guard isBeta(bundleID), name.hasSuffix(betaMark), name.count > betaMark.count else { return name }
         return String(name.dropLast(betaMark.count))
     }
+
+    /// Whether `old` is one of `id`'s bundle ids from before one bundle id
+    /// an app (2026-11-01): its beta's `<id>.Beta`, and on a Mac `<id>.Mac`
+    /// and `<id>.Mac.Beta`. An install of `id` replaces such an app.
+    public static func isEarlierID(_ old: String, of id: String) -> Bool {
+        [betaSuffix, ".Mac", ".Mac" + betaSuffix].contains { id + $0 == old }
+    }
 }
