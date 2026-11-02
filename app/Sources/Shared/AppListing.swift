@@ -58,11 +58,25 @@ struct AppListing: Identifiable {
             if byApp[build.productionBundleID] == nil { order.append(build.productionBundleID) }
             byApp[build.productionBundleID, default: []].append(build)
         }
-        return order.map { id in
+        let rows = order.map { id in
             let built = byApp[id] ?? []
             return AppListing(app: app, id: id, production: byBundle(built.filter { $0.channel == .production }).first,
                               betas: byBundle(built.filter { $0.channel != .production }))
         }
+        return newestOfEachName(rows)
+    }
+
+    /// One row a name: an app that moved to another bundle id (Visor's
+    /// iPhone app, com.LoganShire.VisorClient.iOS before one bundle id an
+    /// app, com.LoganShire.Visor after) is one app, under the bundle id of
+    /// its newest build; its earlier id's row goes, as only one of the two
+    /// is the app now. Apps of different names (Visor and Visor Server on
+    /// a Mac) keep their rows. The order as it was.
+    static func newestOfEachName(_ rows: [AppListing]) -> [AppListing] {
+        func newest(_ row: AppListing) -> Date { row.groups.compactMap { $0.latest?.published }.max() ?? .distantPast }
+        var kept: [String: AppListing] = [:]
+        for row in rows where kept[row.name].map({ newest($0) < newest(row) }) ?? true { kept[row.name] = row }
+        return rows.filter { kept[$0.name]?.id == $0.id }
     }
 
     /// Builds by bundle id, the bundle with the newest first, each newest

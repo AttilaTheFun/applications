@@ -145,6 +145,23 @@ final class ApplicationsListingTests: XCTestCase {
         XCTAssertEqual(rows[2].betas.map(\.bundleID), ["com.example.VisorBeta"])
     }
 
+    /// An app that moved to another bundle id (Visor's iPhone app, from
+    /// its own id to one bundle id an app) is one row, under the id of its
+    /// newest build; the earlier id's row goes.
+    func testAnAppThatMovedBundleIDsIsOneRow() {
+        let now = Date()
+        func build(_ id: String, _ bundleID: String, _ ago: TimeInterval) -> Build {
+            Build(id: id, bundleID: bundleID, name: "Visor", version: "0.43.\(id)", buildNumber: "1", platform: DeviceInstalls.platform,
+                  published: now.addingTimeInterval(-ago), size: 0, channel: .beta, buildVariant: "Alpha")
+        }
+        let app = AppRelease(app: "Visor", iconBuild: nil, builds: [build("130", "com.example.Visor", 0),
+                                                                    build("114", "com.example.VisorClient.iOS", 600),
+                                                                    build("113", "com.example.VisorClient.iOS", 900)])
+        let rows = AppListing.rows(app, builds: app.builds)
+        XCTAssertEqual(rows.map(\.id), ["com.example.Visor"])
+        XCTAssertEqual(rows.first?.versionTitle, "0.43.130")
+    }
+
     /// A build's link (`applications://build?…`) and its notification open
     /// the app's one entry, its production's, at the build: a beta's too.
     func testABuildsLinkOpensItsAppsEntry() async throws {
