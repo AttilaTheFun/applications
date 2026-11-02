@@ -3,28 +3,41 @@ import ApplicationsProtocol
 
 /// What is installed on this Mac, read from the apps themselves: the copy
 /// in /Applications (or ~/Applications), its numbers, its variant and its
-/// executable's UUID. No app needs to say anything. Each bundle id is an app of its own:
-/// a beta (`<id>.Beta`) is told apart from its production, and installed
-/// beside it.
+/// executable's UUID. No app needs to say anything. One bundle id is one
+/// app, installed under its own name.
 enum InstalledApps {
-    /// Where the app is installed, or where it goes when it is not: the
-    /// copy in an Applications folder that Launch Services knows, else
-    /// /Applications/<name>.app, unless an app of another bundle id is
-    /// there (a beta named as its production is), when it is named after
-    /// its own id.
-    static func location(bundleID: String, name: String) -> URL {
-        let folders = ["/Applications/", FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Applications").path + "/"]
-        let known = NSWorkspace.shared.urlsForApplications(withBundleIdentifier: bundleID)
-        if let found = known.first(where: { url in folders.contains { url.path.hasPrefix($0) } }) { return found }
+    static let folders = ["/Applications/", FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Applications").path + "/"]
+
+    /// Where the app is installed, or nil: the copy in an Applications
+    /// folder Launch Services knows (one under its own name first), else
+    /// /Applications/<name>.app if that is it.
+    static func current(bundleID: String, name: String) -> URL? {
+        let known = NSWorkspace.shared.urlsForApplications(withBundleIdentifier: bundleID).filter { url in folders.contains { url.path.hasPrefix($0) } }
+        if let own = known.first(where: { $0.lastPathComponent == "\(name).app" }) { return own }
+        if let found = known.first { return found }
         let named = URL(fileURLWithPath: "/Applications/\(name).app")
-        guard let there = Bundle(url: named)?.bundleIdentifier, there != bundleID else { return named }
-        return URL(fileURLWithPath: "/Applications/\(name) (\(bundleID)).app")
+        return Bundle(url: named)?.bundleIdentifier == bundleID ? named : nil
+    }
+
+    /// Where an install puts the app: where it is now under its own name;
+    /// else /Applications/<name>.app when that is free, the app itself, or
+    /// one of its earlier bundle ids (`earlier`, the catalog's other ids
+    /// under its name, and BundleVariant.isEarlierID's: the same app before
+    /// one bundle id an app, which the install replaces); else, beside an
+    /// unrelated app of its name, where it is now or named after its id.
+    static func destination(bundleID: String, name: String, earlier: Set<String>) -> URL {
+        let current = current(bundleID: bundleID, name: name)
+        if let current, current.lastPathComponent == "\(name).app" { return current }
+        let named = URL(fileURLWithPath: "/Applications/\(name).app")
+        guard let there = Bundle(url: named)?.bundleIdentifier, there != bundleID, !earlier.contains(there),
+              !BundleVariant.isEarlierID(there, of: bundleID) else { return named }
+        return current ?? URL(fileURLWithPath: "/Applications/\(name) (\(bundleID)).app")
     }
 
     /// The build installed of an app, or nil.
     static func installed(bundleID: String, name: String) -> InstalledBuild? {
-        let url = bundleID == Bundle.main.bundleIdentifier ? Bundle.main.bundleURL : location(bundleID: bundleID, name: name)
-        guard let bundle = Bundle(url: url), bundle.bundleIdentifier == bundleID else { return nil }
+        let url = bundleID == Bundle.main.bundleIdentifier ? Bundle.main.bundleURL : current(bundleID: bundleID, name: name)
+        guard let url, let bundle = Bundle(url: url), bundle.bundleIdentifier == bundleID else { return nil }
         let info = bundle.infoDictionary ?? [:]
         return InstalledBuild(bundleID: bundleID, version: info["CFBundleShortVersionString"] as? String ?? "",
                               buildNumber: info["CFBundleVersion"] as? String ?? "",
