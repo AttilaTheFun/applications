@@ -8,12 +8,12 @@
 	<string>1</string>
 	<key>LSApplicationQueriesSchemes</key>
 	<array>
-		<string>halo</string>
 		<string>iso-playground</string>
-		<string>neutron</string>
 		<string>osmonitor</string>
+		<string>playground</string>
 		<string>reviews</string>
 		<string>shireworks</string>
+		<string>storybook</string>
 		<string>visor</string>
 	</array>
 	<key>NSAppTransportSecurity</key>

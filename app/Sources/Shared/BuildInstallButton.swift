@@ -5,8 +5,8 @@ import SwiftUI
 /// A build's state on this device as a button: Install (Update, for the
 /// newest when an older one is here), a spinner while it is on its way, or
 /// Open once it is here (for Applications itself too, where it does nothing:
-/// Applications is open already); Installed for an app here that Applications
-/// cannot open.
+/// Applications is open already), not tappable for an app here that
+/// Applications cannot open: the titles are Open, Update and Install alone.
 struct BuildInstallButton: View {
     @Environment(ApplicationsStore.self) private var store
     let builds: AppBuilds
@@ -23,12 +23,8 @@ struct BuildInstallButton: View {
         } else if installedHere, builds.bundleID == Bundle.main.bundleIdentifier {
             openButton {}
         } else if installedHere {
-            Button("Installed") {}
-                .buttonStyle(.bordered)
-                .buttonBorderShape(.capsule)
-                .controlSize(.small)
-                .allowsHitTesting(false)
-                .accessibilityIdentifier("installed-" + build.id)
+            openButton {}
+                .disabled(true)
         } else {
             Button(newest && store.installs.standing(builds) == .updateAvailable ? "Update" : "Install") {
                 installing = true
