@@ -6,8 +6,9 @@ import SwiftUI
 /// but hasn't said which build, which opens it (opened, it says, and the
 /// list asks again when Applications is back); Update when it said an older
 /// build than the row's newest; Open when it said the newest. A spinner
-/// while a build is on its way. An app here that Applications can't open
-/// (it lists no scheme of it) is Installed; Applications itself is Open.
+/// while a build is on its way. Only those four titles (the owner,
+/// 2026-11-03): an app here that Applications can't open (it lists no scheme
+/// of it) is Open too, not tappable; Applications itself is Open.
 struct ListedStateButton: View {
     @Environment(ApplicationsStore.self) private var store
     let builds: AppBuilds
@@ -23,16 +24,8 @@ struct ListedStateButton: View {
                 case .update: installButton("Update", latest)
                 case .unknown: openButton("Unknown", "unknown-" + latest.id)
                 case .open:
-                    if builds.bundleID == Bundle.main.bundleIdentifier || store.installs.canOpen(builds) {
-                        openButton("Open", "open-" + latest.id)
-                    } else {
-                        Button("Installed") {}
-                            .buttonStyle(.bordered)
-                            .buttonBorderShape(.capsule)
-                            .controlSize(.small)
-                            .allowsHitTesting(false)
-                            .accessibilityIdentifier("installed-" + latest.id)
-                    }
+                    openButton("Open", "open-" + latest.id)
+                        .disabled(builds.bundleID != Bundle.main.bundleIdentifier && !store.installs.canOpen(builds))
                 }
             }
         }
