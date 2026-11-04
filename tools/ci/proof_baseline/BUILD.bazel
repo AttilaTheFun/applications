@@ -4,7 +4,7 @@ load("//tools/swift:defs.bzl", "STRICT_SWIFT")
 # What a proof's screens are compared with: a pull request's base branch, a
 # push's commit before, a release's release before (Baseline). CI builds
 # Baseline.swift and main.swift with swiftc on the runner
-# (tools/ci/mac_vm_tests.sh); here the choice is tested, on Linux as the
+# (tools/ci/ios_lease_tests.sh); here the choice is tested, on Linux as the
 # other portable tests are (the linux job's bazel test //...).
 #
 #   bazel test //tools/ci/proof_baseline:baseline_tests

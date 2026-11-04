@@ -1,5 +1,5 @@
 // What a proof's screens are compared with (Baseline), for
-// tools/ci/mac_vm_tests.sh, which builds this folder's two files with
+// tools/ci/ios_lease_tests.sh, which builds this folder's two files with
 // swiftc on the runner:
 //
 //   proof_baseline <event> <base ref> <ref name> <commit> [<tag>…]

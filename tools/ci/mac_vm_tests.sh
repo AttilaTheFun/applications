@@ -1,23 +1,35 @@
 #!/bin/bash
-# Applications' tests that need a Mac, in a macOS VM leased from OS Server
-# (xcode_27_2): the Mac's tests and the server's, with the rest of //tests
-# and //libraries, but not the iPhone and iPad tests, which are built on
-# Linux and run on an iOS lease, where the proof is made of their pictures
+# Applications' tests that need a Mac (the server's Apple side, the Mac app's
+# window, the libraries' Apple side: each an .xctest bundle, macos_unit_test), built on Linux in the
+# job's own container (tools/ci/build_mac_tests.sh, below) and run on a slot
+# of OS Server's primary Mac VM (`oss machine lease mac`: a macOS user of
+# its own on a VM that stays up, ready in seconds), not in a VM leased and
+# booted for the job. The tests with nothing of Apple's in them run on Linux
+# (the linux job), and the iPhone and iPad tests on an iOS lease
 # (tools/ci/ios_lease_tests.sh).
 #
 #   tools/ci/mac_vm_tests.sh [--logs <dir>]
 #
-# --logs gets the tests' logs (their bazel-testlogs). The script fails as
-# the tests do.
+# --logs gets the tests' logs, laid out as bazel-testlogs is (each test's
+# test.log and test.xml). The script fails as the tests do.
 #
-# The VM (tools/ci/mac_vm.sh) is the script's alone, released however it
-# ends; the tree goes in as committed (the job stamps no version). The
-# Mac's pictures aren't compared: a VM's window server draws the Mac's
-# sidebars blank (tests/mac_tests), and they compare only where CI or
-# SNAPSHOT_COMPARE is set, which nothing passes in.
+# Each bundle goes up and is run by `oss machine xctest` (xcodebuild
+# test-without-building as the slot's user), a bundle at a time, stopped
+# after 15 minutes; its output and its JUnit come back. The server's tests
+# run outside any login session (their disk images mount with hdiutil as
+# the slot's user). The Mac app's window tests (GUI below) draw a window,
+# so they run in the primary's GUI session (`--gui`, one run at a time on
+# the primary). Their pictures aren't compared: they compare only where CI
+# or SNAPSHOT_COMPARE is set, which nothing passes in. Several runs share the
+# primary's loopback, so a test that listens takes a port the system
+# chooses. The slot is the script's alone, released however it ends.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-. "$ROOT/tools/ci/mac_vm.sh"
+OSS="/Applications/OS Server.app/Contents/Helpers/oss"
+[ -x "$OSS" ] || OSS="$(command -v oss)"
+me="$(basename "$0")"
+# The bundles that draw a window, run in the primary's GUI session.
+GUI=" tests/mac_tests/mac_tests "
 
 usage() { echo "usage: tools/ci/mac_vm_tests.sh [--logs <dir>]" >&2; exit 2; }
 logs=""
@@ -28,35 +40,101 @@ while [ $# -gt 0 ]; do
     esac
 done
 
-mac_vm_start applications-ci
+work="$(mktemp -d)"
+slot=""
+child=""
+finished=""
+# The slot given back, the work deleted, however the script ends; an end
+# before `finished` is a failure, whatever it says.
+cleanup() {
+    local status=$?
+    [ -n "$finished" ] || [ "$status" -ne 0 ] || status=1
+    [ -z "$child" ] || kill "$child" 2> /dev/null || true
+    [ -n "$slot" ] || slot="$(. "$work/lease" 2> /dev/null; printf '%s' "${OSS_ID:-}")"
+    if [ -n "$slot" ]; then
+        "$OSS" machine release "$slot" || echo "$me: slot $slot was not released: oss machine release $slot" >&2
+    fi
+    rm -rf "$work"
+    exit "$status"
+}
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
-# The iOS tests are ios-tests' (tools/ci/ios_lease_tests.sh).
-mac_vm_steps << 'STEPS'
-    test)
-        cd src && bazel test --keep_going --test_output=errors -- //tests/... //libraries/... -//tests/app_tests
-        ;;
-    logs)
-        cd src && tar -czf ~/ci/test-logs.tar.gz -C bazel-testlogs/ .
-        ;;
-STEPS
+# Long commands run in the background and are waited for, so a signal (the
+# runner cancelling the job) reaches the trap at once, not when they end.
+run() {
+    "$@" &
+    child=$!
+    local status=0
+    wait "$child" || status=$?
+    child=""
+    return "$status"
+}
 
-echo "::group::A macOS VM (xcode_27_2)"
-mac_vm_lease
-mac_vm_copy_tree
+# The build, in the job's own container (applications-jit: a Linux
+# container with OS Server's read-only Bazel cache in its ~/.bazelrc and the
+# cache's read token in its ~/.netrc, which opens OS Server's files too).
+# Bazel fetches the SDK archive (container_build.sh's) and the ported tools
+# from OS Server's files, by SHA-256, through the downloader config written
+# here, its host the first of OSS_SERVERS (OSS_FILES_HOST names another).
+sdk="$(sed -n 's/^SDK_SHA256="\(.*\)"$/\1/p' "$ROOT/tools/ci/container_build.sh")"
+[ -n "$sdk" ] || { echo "$me: no SDK archive in tools/ci/container_build.sh" >&2; exit 1; }
+host="${OSS_FILES_HOST:-}"
+if [ -z "$host" ]; then
+    host="${OSS_SERVERS:-}"
+    host="${host%%[ ,]*}"
+    host="${host#*://}"
+    host="${host%%[:/]*}"
+fi
+[ -n "$host" ] || { echo "$me: no host for OS Server's files (OSS_SERVERS): set OSS_FILES_HOST" >&2; exit 1; }
+cat > "$work/downloader.cfg" << EOF
+rewrite apple-sdks\.invalid/.* http://$host:7490/files/sha256/$sdk
+rewrite ported-tools\.invalid/sha256/(.*) http://$host:7490/files/sha256/\$1
+EOF
+echo "::group::The tests, built on Linux"
+echo "This container: $(nproc) CPUs, $(awk '/MemTotal/ { printf "%.1f GB", $2 / 1048576 }' /proc/meminfo 2> /dev/null) memory"
+run bash -c 'cd "$0" && exec tools/ci/build_mac_tests.sh "$@"' "$ROOT" "$work/mac-tests.tar.gz" \
+    --config=apple_on_linux --downloader_config="$work/downloader.cfg"
+mkdir "$work/tests"
+tar -xzf "$work/mac-tests.tar.gz" -C "$work/tests"
 echo "::endgroup::"
 
-echo "::group::bazel test //tests/... //libraries/..."
+echo "::group::A slot on the primary Mac"
+started=$SECONDS
+run "$OSS" machine lease mac --wait --minutes=30 --exports > "$work/lease"
+slot="$(. "$work/lease"; printf '%s' "$OSS_ID")"
+echo "Slot $slot, in $((SECONDS - started))s"
+echo "::endgroup::"
+
+echo "::group::The tests"
 status=0
-run in_vm test || status=$?
+while read -r name; do
+    out="$work/testlogs/$name"
+    mkdir -p "$out"
+    gui=()
+    case "$GUI" in *" $name "*) gui=(--gui) ;; esac
+    started=$SECONDS
+    result=0
+    run timeout 900 "$OSS" machine xctest "$slot" --tests="$work/tests/$name.zip" ${gui[@]+"${gui[@]}"} --junit="$out/test.xml" > "$out/test.log" 2>&1 \
+        || result=$?
+    [ "$result" -ne 124 ] || echo "stopped after 15 minutes" >> "$out/test.log"
+    # XCTest's own count, the last of its "Executed N tests" lines (the
+    # whole bundle's): a bundle that ran nothing says so (and `oss` fails it).
+    executed="$(grep -E 'Executed [0-9]+ tests?' "$out/test.log" | tail -1 | sed 's/^[[:space:]]*//')"
+    if [ "$result" -eq 0 ]; then
+        echo "//$(dirname "$name"):$(basename "$name") PASSED in $((SECONDS - started))s: ${executed:-no count}"
+    else
+        echo "//$(dirname "$name"):$(basename "$name") FAILED ($result) in $((SECONDS - started))s: ${executed:-no count}"
+        tail -40 "$out/test.log"
+        status=1
+    fi
+done < "$work/tests/tests.txt"
 echo "::endgroup::"
 if [ -n "$logs" ]; then
     mkdir -p "$logs"
-    if run in_vm logs && run "$OSS" machine download "$lease" --identity="$work/key" ci/test-logs.tar.gz "$work/test-logs.tar.gz"; then
-        tar -xzf "$work/test-logs.tar.gz" -C "$logs"
-    else
-        echo "mac_vm_tests.sh: no test logs" >&2
-    fi
+    cp -R "$work/testlogs/." "$logs/"
 fi
-mac_vm_release
+[ "$status" -eq 0 ] || echo "::error::Test failed ($status)"
 finished=1
 exit "$status"

@@ -15,3 +15,17 @@ config_setting(
     name = "build_ios_tests_anywhere",
     flag_values = {":ios_tests_anywhere": "true"},
 )
+
+# Whether the Mac's tests (macos_unit_test) build where they can't run: on
+# Linux, for a slot of OS Server's primary Mac to run them
+# (tools/ci/mac_vm_tests.sh, `oss machine xctest`). Without it Linux's
+# `bazel test //...` passes over them; a Mac runs them as ever.
+bool_flag(
+    name = "mac_tests_anywhere",
+    build_setting_default = False,
+)
+
+config_setting(
+    name = "build_mac_tests_anywhere",
+    flag_values = {":mac_tests_anywhere": "true"},
+)

@@ -121,16 +121,16 @@ back however it ends:
 
 | Job | Runs for | What it does |
 | --- | --- | --- |
-| `linux` | pull requests, main | `tools/ci/container_build.sh`: every target built in a Linux container (the apps and the server with rules_applecross), then the tests Linux runs. `beta` and `release` build the Mac app they publish the same way (below: "The published Mac apps are built on Linux") |
-| `mac-tests` | main, by hand | `tools/ci/mac_vm_tests.sh`: the tests that need a Mac, in a macOS VM (`xcode_27_2`) (below) |
+| `linux` | pull requests, main | `tools/ci/container_build.sh`: every target built in a Linux container (the apps and the server with rules_applecross), then the tests Linux runs. `alpha` and `release` build the Mac app they publish the same way (below: "The published Mac apps are built on Linux") |
+| `mac-tests` | main, by hand | `tools/ci/mac_vm_tests.sh`: the tests that need a Mac, built on Linux in the job's container and run on a slot of OS Server's primary Mac (below) |
 | `ios-tests` | pull requests, main, by hand | `tools/ci/ios_lease_tests.sh`: the iPhone and iPad tests built on Linux and run on an iOS lease (`oss machine xctest`); by hand alone, then the proof from their result bundle (below: "Tests on an iOS lease") |
-| `beta` | main, after `linux` | the Alpha (`--config=alpha`): the version stamped in (tools/ci/next_version.sh, below: "Versions"), the Mac app and the iPhone and iPad app built with `--config=alpha` in a Linux container (`tools/ci/container_build.sh package`; the iPhone's a device build signed ad hoc, below: "The iPhone app"), the Mac's icon checked for the dark appearance (`tools/ci/check_mac_icons.sh`), and both published with tools/ci/publish_from_ci.sh: a beta, which the server signs (the Mac's with Developer ID, notarized; the iPhone's with the development identity and profiles) |
+| `alpha` | main, after `linux` | the Alpha (`--config=alpha`): the version stamped in (tools/ci/next_version.sh, below: "Versions"), the Mac app and the iPhone and iPad app built with `--config=alpha` in a Linux container (`tools/ci/container_build.sh package`; the iPhone's a device build signed ad hoc, below: "The iPhone app"), the Mac's icon checked for the dark appearance (`tools/ci/check_mac_icons.sh`), and both published with tools/ci/publish_from_ci.sh: a beta, which the server signs (the Mac's with Developer ID, notarized; the iPhone's with the development identity and profiles) |
 | `adhoc` | by hand (`workflow_dispatch`) on a branch that is neither main nor a release branch | the same with `--config=adhoc`: an AdHoc build, which the server keeps a week (docs/VARIANTS.md) |
 | `release` | a push to a `release-*` branch | the same with `--config=prod` once the branch's commit is found on main: production |
 
 A pull request's run is `linux` and `ios-tests`: the apps, the server and
 the tests built on Linux, the tests Linux runs, and the iPhone and iPad
-tests on an iOS lease, in under ten minutes. The beta and the tests that
+tests on an iOS lease, in under ten minutes. The Alpha and the tests that
 need a Mac are main's, per commit, and the proof is by hand alone
 (2026-11-01, for CI's time: run to propose a release, or after the fact to
 bisect a regression). Before that (the owner, 2026-10-31: "Beta
@@ -138,7 +138,7 @@ builds and proof should be per master commit not PR commit. The CI that
 runs per pr commit and must pass should ideally consist of building the
 apps and tests on linux and then running relatively fast test suites.").
 Each container job keeps its Bazel tree between runs in a volume of its own
-(`APPLICATIONS_CI_VOLUME`: applications-ci-linux, -ios, -beta), so a run
+(`APPLICATIONS_CI_VOLUME`: applications-ci-linux, -ios, -alpha, -adhoc), so a run
 builds what changed; the runner takes one job at a time, so no two
 containers share one.
 
@@ -148,7 +148,7 @@ containers share one.
   and a release's runs finish.
 - **Forks.** A fork's pull request runs nothing: a self-hosted runner never
   runs a fork's code, and a fork's run gets no token.
-- **The token.** Only `beta` and `release` have `id-token: write`, which is
+- **The token.** Only `alpha` and `release` have `id-token: write`, which is
   what lets a job ask for a token: its builds' version, then their publish.
 - **Untrusted text** (a pull request's title, a release's body) reaches the
   shell through `env`, never `${{ }}` inside `run`.
@@ -171,7 +171,7 @@ containers share one.
   with the lease, so the targets' files (by `bazel cquery --output=files`)
   are copied into `<dir>` in the checkout. The checkout is the runner's,
   and the container writes as OS Server's user, so .ci/container and
-  `<dir>` are made writable by the group the two share. `beta` and
+  `<dir>` are made writable by the group the two share. `alpha` and
   `release` took theirs so until they built on a Mac (below).
 - **This Mac's tailnet name**, where the container reaches OS Server's
   files, comes from Tailscale's command line. That answers only the user
@@ -183,7 +183,7 @@ containers share one.
   0, so each script counts an end before its last line as a failure. That
   is what hid main's first publish: the job passed and nothing was sent.
 
-Another repository copies `beta` and `release`, with
+Another repository copies `alpha` and `release`, with
 tools/ci/container_build.sh, tools/ci/check_mac_icons.sh,
 tools/ci/next_version.sh, tools/ci/publish_from_ci.sh and the
 connect_from_ci.sh both source, and names its own app, Info.plists and
@@ -198,7 +198,7 @@ Xcode does since its 0.0.3.3251084 (its #242), and `.bazelrc`'s
 `apple_on_linux` accepts the icon's flattened images, which aren't Xcode's
 (`RULES_APPLECROSS_RELAX_ACTOOL_ICON_COMPOSER`; macOS 26 and later draw
 the icon from its layers). Until then it compiled one flat image, and
-`beta` and `release` built the app they publish in a macOS VM.
+`alpha` and `release` built the app they publish in a macOS VM.
 
 Now they build it in the Linux container (`tools/ci/container_build.sh
 package .ci/packages …`, which builds the checkout as the Version step
@@ -206,12 +206,12 @@ stamped it), and `tools/ci/check_mac_icons.sh .ci/packages` checks each
 Mac app's icon on the runner's Mac: it unzips the app, runs `xcrun
 assetutil --info` on its Assets.car, and fails if it has no
 `NSAppearanceNameDarkAqua` rendition (or no Assets.car). So a flat icon is
-never published: the job fails before its Publish step. `beta` holds the
+never published: the job fails before its Publish step. `alpha` holds the
 token (`id-token: write`) and waits for `linux`.
 
 ### The iPhone app
 
-`beta` and `release` build the iPhone and iPad app beside the Mac's, in the
+`alpha` and `release` build the iPhone and iPad app beside the Mac's, in the
 same container, as a device build (`--config=ci_device`, .bazelrc:
 `--ios_multi_cpus=arm64 --ios_signing_cert_name=-`). rules_apple wants a
 provisioning profile for a device build, and CI holds none of the team's,
@@ -302,22 +302,31 @@ base can't be fetched or no picture came back. The proof:
 
 The job's summary lists the screens and their changed pixels against the base.
 
-### Tests in a macOS VM
+### Tests on a Mac slot
 
-`tools/ci/mac_vm_tests.sh [--logs <dir>]`:
+`tools/ci/mac_vm_tests.sh [--logs <dir>]`, in the job's own Linux container
+(applications-jit):
 
-1. Leases a macOS VM (`xcode_27_2`) for an hour (tools/ci/mac_vm.sh). It
-   renews the lease while it runs and releases it on every exit (a trap).
-2. Copies in the committed tree (`git archive`) and the runner's
-   bazelisk. The VM's Bazel reads OS Server's cache, as every lease's does.
-3. Runs `bazel test //tests/... //libraries/...` but for //tests/app_tests
-   (ios-tests'), and takes the tests' logs, uploaded as `test-logs` when it
-   fails.
+1. Builds the tests that need a Mac (`macos_unit_test` under //tests and
+   //libraries: the server's, the Mac app's window, the libraries' Apple
+   side) for an Apple silicon Mac, with
+   rules_applecross (`tools/ci/build_mac_tests.sh`,
+   `--//tools/ci:mac_tests_anywhere`): each an .xctest bundle, whole, its
+   files in its Resources. Bazel reads OS Server's cache and fetches the SDK
+   archive and the ported tools from its files.
+2. Leases a slot of OS Server's primary Mac (`oss machine lease mac`: a
+   macOS user of its own on a VM that stays up), and releases it on every
+   exit (a trap).
+3. Runs each bundle there, a bundle at a time (`oss machine xctest`,
+   stopped after 15 minutes), and takes its output and JUnit, uploaded as
+   `test-logs` when it fails. The server's tests run as the slot's user
+   (disk images mount with hdiutil there); the Mac app's window tests in
+   the primary's GUI session (`--gui`). A test that listens takes a port
+   the system chooses: runs share the primary's loopback.
 
-The Mac's pictures aren't compared there. A VM's window server draws a
-Mac sidebar's list blank (tests/mac_tests), and Mac pictures are compared
-only where `CI` or `SNAPSHOT_COMPARE=1` is set, which nothing passes into
-the VM's tests.
+The Mac's pictures aren't compared there: they compare only where `CI` or
+`SNAPSHOT_COMPARE=1` is set, which nothing passes into the tests. The tests
+with nothing of Apple's in them run on Linux (`linux`).
 
 ## Versions
 
@@ -373,7 +382,7 @@ connect_from_ci.sh. In a job with `id-token: write` and
    checkout, leaving CFBundleVersion at 1. The Info.plists are XML, as
    committed; the stamp is never committed (each job checks out afresh).
 
-This repository's `beta` and `release` run
+This repository's `alpha` and `release` run
 `tools/ci/next_version.sh Applications app/Info.mac.plist app/Info.ios.plist`,
 so Applications' builds are 0.10.N. ios-tests doesn't: the proof is not
 versioned.

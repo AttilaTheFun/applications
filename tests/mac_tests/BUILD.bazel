@@ -1,4 +1,5 @@
-load("@rules_swift//swift:swift.bzl", "swift_test")
+load("@rules_apple//apple:macos.bzl", "macos_unit_test")
+load("@rules_swift//swift:swift.bzl", "swift_library")
 load("//tools/swift:defs.bzl", "STRICT_SWIFT")
 
 # Applications on the Mac, in a window that is never shown, on its fixture:
@@ -12,13 +13,16 @@ load("//tools/swift:defs.bzl", "STRICT_SWIFT")
 #
 # Only a login session's window server draws the sidebar: run from a plain
 # SSH shell, its list is blank (and its background white) while the detail
-# draws. In a leased Mac VM, compare and record in its user's session:
-# `sudo launchctl asuser $(id -u runner) sudo -u runner zsh -lc "cd … && bazel test …"`.
-swift_test(
-    name = "mac_tests",
+# draws. CI builds the bundle on Linux and runs it on a slot of OS Server's
+# primary Mac in its GUI session (`oss machine xctest --gui`,
+# tools/ci/mac_vm_tests.sh), where it checks the titles but not the
+# pictures (they compare only where CI or SNAPSHOT_COMPARE is set).
+swift_library(
+    name = "mac_tests_lib",
+    testonly = True,
     srcs = glob(["*.swift"]) + ["//app:macos_sources_for_tests"],
     copts = STRICT_SWIFT,
-    data = glob(["Snapshots/*.png"], allow_empty = True),
+    module_name = "ApplicationsMacTests",
     target_compatible_with = ["@platforms//os:macos"],
     deps = [
         "@swiftpkg_agent_ui//:MarkdownViews",
@@ -27,4 +31,19 @@ swift_test(
         "//libraries/pipeline_client",
         "//libraries/pipeline_snapshots/macos:pipeline_snapshots_macos",
     ],
+)
+
+macos_unit_test(
+    name = "mac_tests",
+    minimum_os_version = "15.0",
+    # The kept pictures, in the test's runfiles, where MacSnapshotHost reads
+    # them when it compares (bazel test on a Mac).
+    data = glob(["Snapshots/*.png"], allow_empty = True),
+    # Run by a Mac: on Linux, `bazel test //...` passes over it, unless it's
+    # built for a Mac slot to run (//tools/ci:mac_tests_anywhere).
+    target_compatible_with = select({
+        "//tools/ci:build_mac_tests_anywhere": [],
+        "//conditions:default": ["@platforms//os:macos"],
+    }),
+    deps = [":mac_tests_lib"],
 )

@@ -1,19 +1,17 @@
+load("@rules_apple//apple:macos.bzl", "macos_unit_test")
+load("@rules_swift//swift:swift.bzl", "swift_library")
 load("//tools/swift:defs.bzl", "STRICT_SWIFT")
-load("@rules_swift//swift:swift.bzl", "swift_test")
 
-swift_test(
-    name = "server_tests",
-    copts = STRICT_SWIFT,
+# The server's tests, Apple's side of it (signing, disk images, keychains):
+# a Mac's alone. An .xctest bundle, built on Linux in CI and run on a slot of
+# OS Server's primary Mac (tools/ci/mac_vm_tests.sh), or on a Mac with
+# `bazel test //tests/server_tests`.
+swift_library(
+    name = "server_tests_lib",
+    testonly = True,
     srcs = glob(["*.swift"]),
-    # The apps' Info.plists: their version is the server's, and the iPhone's
-    # query schemes are its own release's (SchemeTests).
-    data = [
-        "//app:Info.ios.plist",
-        "//app:Info.mac.plist",
-    ],
-    # Mac apps' disk images are mounted with hdiutil, which the sandbox
-    # does not allow.
-    tags = ["no-sandbox"],
+    copts = STRICT_SWIFT,
+    module_name = "ServerTests",
     target_compatible_with = ["@platforms//os:macos"],
     deps = [
         "//libraries/applications_protocol",
@@ -22,4 +20,26 @@ swift_test(
         "//libraries/pipeline_http",
         "//libraries/pipeline_server",
     ],
+)
+
+macos_unit_test(
+    name = "server_tests",
+    minimum_os_version = "15.0",
+    # The apps' Info.plists: their version is the server's, and the iPhone's
+    # query schemes are its own release's (SchemeTests), read from the
+    # bundle's Resources where the test runs without runfiles.
+    resources = [
+        "//app:Info.ios.plist",
+        "//app:Info.mac.plist",
+    ],
+    # Mac apps' disk images are mounted with hdiutil, which Bazel's sandbox
+    # does not allow.
+    tags = ["no-sandbox"],
+    # Run by a Mac: on Linux, `bazel test //...` passes over it, unless it's
+    # built for a Mac slot to run (//tools/ci:mac_tests_anywhere).
+    target_compatible_with = select({
+        "//tools/ci:build_mac_tests_anywhere": [],
+        "//conditions:default": ["@platforms//os:macos"],
+    }),
+    deps = [":server_tests_lib"],
 )

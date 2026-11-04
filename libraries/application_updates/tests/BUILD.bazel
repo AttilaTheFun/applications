@@ -1,4 +1,5 @@
-load("@rules_swift//swift:swift.bzl", "swift_test")
+load("@rules_apple//apple:macos.bzl", "macos_unit_test")
+load("@rules_swift//swift:swift.bzl", "swift_library", "swift_test")
 load("//tools/swift:defs.bzl", "STRICT_SWIFT")
 
 # The shared database across processes (several stores on one file, a write
@@ -7,13 +8,36 @@ load("//tools/swift:defs.bzl", "STRICT_SWIFT")
 # notifications and the system. Linux runs them, as the Mac does.
 #
 #   bazel test //libraries/application_updates/tests:application_updates_tests
+#   bazel test //libraries/application_updates/tests:application_updates_tests_mac   # the same as a Mac .xctest bundle
 #   swift test        # the same, as the Swift package (the root's Package.swift)
-swift_test(
-    name = "application_updates_tests",
-    copts = STRICT_SWIFT,
+swift_library(
+    name = "application_updates_tests_lib",
+    testonly = True,
     srcs = glob(["*.swift"]),
+    copts = STRICT_SWIFT,
+    module_name = "ApplicationUpdatesTests",
     deps = [
         "//libraries/application_updates",
         "@swiftpkg_swift_sql//:SwiftSQL",
     ],
+)
+
+swift_test(
+    name = "application_updates_tests",
+    deps = [":application_updates_tests_lib"],
+)
+
+# The same tests on a Mac, where the library's Apple side is compiled in: an
+# .xctest bundle, built on Linux in CI and run on a slot of OS Server's
+# primary Mac (tools/ci/mac_vm_tests.sh).
+macos_unit_test(
+    name = "application_updates_tests_mac",
+    minimum_os_version = "15.0",
+    # Run by a Mac: on Linux, `bazel test //...` passes over it, unless it's
+    # built for a Mac slot to run (//tools/ci:mac_tests_anywhere).
+    target_compatible_with = select({
+        "//tools/ci:build_mac_tests_anywhere": [],
+        "//conditions:default": ["@platforms//os:macos"],
+    }),
+    deps = [":application_updates_tests_lib"],
 )

@@ -60,9 +60,7 @@ final class SchemeTests: XCTestCase {
     /// says whether each is installed: no build's scheme, and within iOS's
     /// 50.
     func testTheAppListsTheAppsOwnSchemes() throws {
-        let root = try XCTUnwrap(ProcessInfo.processInfo.environment["TEST_SRCDIR"])
-        let plist = URL(fileURLWithPath: root).appendingPathComponent("_main/app/Info.ios.plist")
-        let info = try XCTUnwrap(try PropertyListSerialization.propertyList(from: Data(contentsOf: plist), format: nil) as? [String: Any])
+        let info = try appInfo("Info.ios.plist")
         let schemes = try XCTUnwrap(info["LSApplicationQueriesSchemes"] as? [String])
         XCTAssertTrue(schemes.contains("visor"))
         XCTAssertLessThanOrEqual(schemes.count, 50)
@@ -74,10 +72,8 @@ final class SchemeTests: XCTestCase {
     /// server do: the server's own release, its schemes before the first
     /// Applications build is published, is then the app's.
     func testTheAppsAndTheServerShareOneVersion() throws {
-        let root = try XCTUnwrap(ProcessInfo.processInfo.environment["TEST_SRCDIR"])
         for name in ["Info.ios.plist", "Info.mac.plist"] {
-            let plist = URL(fileURLWithPath: root).appendingPathComponent("_main/app/\(name)")
-            let info = try XCTUnwrap(try PropertyListSerialization.propertyList(from: Data(contentsOf: plist), format: nil) as? [String: Any])
+            let info = try appInfo(name)
             XCTAssertEqual(info["CFBundleShortVersionString"] as? String, ApplicationsServer.version,
                            "app/\(name)'s version is the server's (ApplicationsServer.version), and MODULE.bazel's")
         }
@@ -290,5 +286,14 @@ final class SchemeTests: XCTestCase {
         let usedUp = try await ask("com.example.Noson", "bbbb222")
         XCTAssertEqual(usedUp.status, 409)
         XCTAssertTrue(String(decoding: usedUp.data, as: UTF8.self).contains("publish an Applications build of a newer release"))
+    }
+
+    /// One of the apps' Info.plists (app/), from the test bundle's Resources
+    /// (macos_unit_test's `resources`), wherever the bundle runs: by
+    /// `bazel test` on a Mac, or alone on a Mac slot (`oss machine xctest`).
+    private func appInfo(_ name: String) throws -> [String: Any] {
+        let base = (name as NSString).deletingPathExtension
+        let plist = try XCTUnwrap(Bundle(for: SchemeTests.self).url(forResource: base, withExtension: "plist"), "\(name) in the test bundle's Resources")
+        return try XCTUnwrap(try PropertyListSerialization.propertyList(from: Data(contentsOf: plist), format: nil) as? [String: Any])
     }
 }
