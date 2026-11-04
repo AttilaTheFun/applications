@@ -63,8 +63,8 @@ build:windows --action_env=PATH
 
 # The Apple apps and the server built on Linux with rules_applecross
 # (MODULE.bazel), as isomer and visor are, on a builder that has Xcode
-# 27.2's SDK archive: tools/ci/container_build.sh, in a container leased
-# from OS Server, or a builder whose .bazelrc.user says where the archive is
+# 27.2's SDK archive: tools/ci/container_build.sh, in a Linux container
+# (OS Server's files), or a builder whose .bazelrc.user says where the archive is
 # (`--distdir`, or a `--downloader_config` to an OS Server) and turns this
 # on with `build:linux --config=apple_on_linux`. Without it Linux builds
 # what runs on Linux alone, and nothing fetches the SDKs. Its toolchains

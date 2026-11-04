@@ -74,7 +74,7 @@ server signs, and docs/Updates.md how an app learns of its updates.
   CI's scripts (docs/CI.md): tools/ci/container_build.sh, which builds in a
   Linux container, the Mac app CI publishes included;
   tools/ci/check_mac_icons.sh, which checks that app's icon's dark
-  appearance; tools/ci/ios_lease_tests.sh, which runs the iPhone and iPad
+  appearance on a Mac slot (tools/ci/mac_slot.sh); tools/ci/ios_lease_tests.sh, which runs the iPhone and iPad
   tests on an iOS lease and makes the proof, its screens compared with
   their pictures at its base (tools/ci/proof_baseline: a push's commit
   before); tools/ci/mac_vm_tests.sh, which builds the tests that need a
@@ -108,10 +108,12 @@ The same targets build on Linux, without Xcode, as isomer's and visor's
 do: the apps and the server (the Mac's command line, until the server runs
 on Linux: docs/APPLICATIONS_PLAN.md) with rules_applecross, from Xcode
 27.2's SDK archive, and the libraries and tests that run on Linux, for
-Linux. `tools/ci/container_build.sh` builds in a container leased from this
-Mac's OS Server (0.12.0 or later; containers are lent on the server's own
-Mac), of Visor's agent image, the SDK archive and rules_applecross's ported
-tools coming from that server's files:
+Linux. `tools/ci/container_build.sh` builds in the Linux container it runs
+in (a CI job's, or a Visor session's), or, run on the Mac, in a container
+leased from that Mac's OS Server (0.12.0 or later; containers are lent on
+the server's own Mac), of Visor's agent image. The SDK archive and
+rules_applecross's ported tools come from OS Server's files, at
+OSS_FILES_HOST or the first of OSS_SERVERS:
 
     tools/ci/container_build.sh                       # what CI runs: the builds below, then the tests
     tools/ci/container_build.sh build //app:applications_ios

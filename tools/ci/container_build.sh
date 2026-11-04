@@ -1,20 +1,23 @@
 #!/bin/bash
 # Applications built in a Linux container, as isomer's and visor's CI build
-# theirs: a container leased from this Mac's OS Server (containers are lent
-# on the server's own Mac only), made from Visor's agent image, so CI builds
-# where a session's agent works. The apps and the server take Xcode 27.2's
-# SDK archive and rules_applecross's ported tools from the same OS Server's
-# files (by SHA-256, with its cache's read token in the container's .netrc)
-# through a downloader config written here, and its Bazel reads that
-# server's cache: no host is named in the repository.
+# theirs, with Visor's agent image, so CI builds where a session's agent
+# works:
+# - in a Linux job's own container (CI's applications-jit runners: OS
+#   Server's single-use containers), in place: OS Server has written its
+#   ~/.bazelrc (its cache, read-only) and ~/.netrc (the cache's read token);
+# - from a Mac, in a container leased from that Mac's OS Server (containers
+#   are lent on the server's own Mac only, its checkout mounted).
+# The apps and the server take Xcode 27.2's SDK archive and
+# rules_applecross's ported tools from OS Server's files through the
+# downloader config written here (tools/ci/oss_files.sh), and Bazel reads
+# that server's cache: no host is named in the repository.
 #
-# The build is the container's main process (`--command`): a script written
-# into .ci/container, where it also writes its log and its exit status,
-# which this script follows and passes on, releasing the container however
-# it ends. Not `oss machine run --inside`: that sends its command over the
-# container's socket, in OS Server's own folder, which only OS Server's
-# user reaches, and CI's runner is a user of its own (until OS Server runs a
-# container's commands through its API).
+# From a Mac, the build is the container's main process (`--command`): a
+# script written into .ci/container, where it also writes its log and its
+# exit status, which this script follows and passes on, releasing the
+# container however it ends. Not `oss machine run --inside`: that sends its
+# command over the container's socket, in OS Server's own folder, which only
+# OS Server's user reaches.
 #
 #   tools/ci/container_build.sh                  # what CI builds, then the tests that run on Linux
 #   tools/ci/container_build.sh build <args…>    # bazel build <args…> there (test, the same)
@@ -22,62 +25,23 @@
 #                                                # bazel build <args…>, then the targets' files
 #                                                # copied to <dir> (in this checkout), for CI to publish
 #
-#   OSS_FILES_HOST          the name the container reaches this Mac's OS Server by
-#                           (default: this Mac's tailnet name, from Tailscale)
-#   APPLICATIONS_CI_IMAGE   the image (default: Visor's agent image, below)
-#   APPLICATIONS_CI_VOLUME  Bazel's tree: by default one of the run's own, given
-#                           back with the lease (a build from cold but for what
+#   OSS_FILES_HOST          the name OS Server's files and cache are reached by
+#                           (default: the first of OSS_SERVERS, as a job has it)
+#   APPLICATIONS_CI_IMAGE   from a Mac, the image (default: Visor's agent image, below)
+#   APPLICATIONS_CI_VOLUME  from a Mac, Bazel's tree: by default one of the run's own,
+#                           given back with the lease (a build from cold but for what
 #                           the server's cache has); a name of your own is kept
 #                           between runs (`oss volume delete <name>` when done)
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-IMAGE="${APPLICATIONS_CI_IMAGE:-ghcr.io/attilathefun/visor-agent:0.41.2}"
-SDK_SHA256="b1583e60f9fd35881b5a948ce71627079877f1ced7ea231e14d3c342dd389668"
-if [ -n "${APPLICATIONS_CI_VOLUME:-}" ]; then
-    volume="$APPLICATIONS_CI_VOLUME:/var/cache/bazel:128:keep"
-else
-    volume="applications-ci-${GITHUB_RUN_ID:-$$}-${GITHUB_RUN_ATTEMPT:-1}:/var/cache/bazel:128"
-fi
-# The container's command is split on spaces.
-case "$ROOT" in *" "*) echo "container_build.sh: this checkout's path has a space ($ROOT)" >&2; exit 1 ;; esac
+# shellcheck source=tools/ci/oss_files.sh
+. "$ROOT/tools/ci/oss_files.sh"
+host="$(oss_files_host)"
 
-# The command line inside OS Server, or on the path.
-OSS="/Applications/OS Server.app/Contents/Helpers/oss"
-[ -x "$OSS" ] || OSS="$(command -v oss)"
-# Every call asked again when no server answered (tools/ci/oss_retry.sh).
-export OSS_REAL="$OSS"
-OSS="$ROOT/tools/ci/oss_retry.sh"
-
-host="${OSS_FILES_HOST:-}"
-if [ -z "$host" ]; then
-    host="$(/Applications/Tailscale.app/Contents/MacOS/Tailscale status --json 2>/dev/null | plutil -extract Self.DNSName raw -o - - 2>/dev/null || true)"
-    host="${host%.}"
-fi
-if [ -z "$host" ]; then
-    # Tailscale's command line answers only the user signed in to its app,
-    # not CI's: the same name, from MagicDNS, for this Mac's tailnet address.
-    address="$(ifconfig | awk '/inet 100\./ { print $2; exit }')"
-    [ -z "$address" ] || host="$(dig +short +time=2 +tries=2 -x "$address" @100.100.100.100 | head -1)"
-    host="${host%.}"
-fi
-[ -n "$host" ] || { echo "container_build.sh: no tailnet name for this Mac (Tailscale off?): set OSS_FILES_HOST" >&2; exit 1; }
-
-# MODULE.bazel's placeholders, to this Mac's OS Server (.ci is not checked
-# in; a builder's .bazelrc.user may name the same file).
+# MODULE.bazel's placeholders, to that OS Server (.ci is not checked in; a
+# builder's .bazelrc.user may name the same file).
 mkdir -p "$ROOT/.ci"
-cat > "$ROOT/.ci/downloader.cfg" <<EOF
-rewrite apple-sdks\.invalid/.* http://$host:7490/files/sha256/$SDK_SHA256
-rewrite ported-tools\.invalid/sha256/(.*) http://$host:7490/files/sha256/\$1
-EOF
-
-# What the container runs, and where it says how it went. The container
-# writes as OS Server's user, which needn't be this one (CI's runner is a
-# user of its own): the folders it writes are made here, writable by the
-# group the two share, and emptied of an earlier run's.
-box="$ROOT/.ci/container"
-rm -rf "$box"
-mkdir -p "$box"
-chmod 775 "$box"
+write_downloader_config "$ROOT/.ci/downloader.cfg" "$host"
 
 flags=("--downloader_config=$ROOT/.ci/downloader.cfg")
 # A builder's .bazelrc.user may turn apple_on_linux on already (README):
@@ -85,9 +49,8 @@ flags=("--downloader_config=$ROOT/.ci/downloader.cfg")
 grep -qsx 'build:linux --config=apple_on_linux' "$ROOT/.bazelrc.user" || flags+=(--config=apple_on_linux)
 if [ "${1:-}" = package ]; then
     [ $# -ge 3 ] || { echo "usage: tools/ci/container_build.sh package <dir> <bazel args…>" >&2; exit 1; }
-    # Bazel's tree is the container's own (a volume), gone with the lease:
-    # what CI publishes is copied out into this checkout, the one folder of
-    # the Mac's the container sees.
+    # What CI publishes is copied out of Bazel's tree into this checkout
+    # (from a Mac, the one folder of the Mac's the container sees).
     mkdir -p "$2"
     out="$(cd "$2" && pwd)"
     case "$out/" in
@@ -120,8 +83,41 @@ else
     command=(bash -c 'bazel build --keep_going "$@" //server //app:applications_ios //app:applications_macos //libraries/... && bazel test "$@" //...' -- "${flags[@]}")
 fi
 
+if [ "$(uname -s)" = Linux ]; then
+    # In this container, in place.
+    echo "This container: $(nproc) CPUs, $(awk '/MemTotal/ { printf "%.1f GB", $2 / 1048576 }' /proc/meminfo 2> /dev/null) memory"
+    cd "$ROOT"
+    exec "${command[@]}"
+fi
+
+# From a Mac: a container leased from its OS Server.
+IMAGE="${APPLICATIONS_CI_IMAGE:-ghcr.io/attilathefun/visor-agent:0.41.2}"
+if [ -n "${APPLICATIONS_CI_VOLUME:-}" ]; then
+    volume="$APPLICATIONS_CI_VOLUME:/var/cache/bazel:128:keep"
+else
+    volume="applications-ci-$$:/var/cache/bazel:128"
+fi
+# The container's command is split on spaces.
+case "$ROOT" in *" "*) echo "container_build.sh: this checkout's path has a space ($ROOT)" >&2; exit 1 ;; esac
+
+# The command line inside OS Server, or on the path.
+OSS="/Applications/OS Server.app/Contents/Helpers/oss"
+[ -x "$OSS" ] || OSS="$(command -v oss)"
+# Every call asked again when no server answered (tools/ci/oss_retry.sh).
+export OSS_REAL="$OSS"
+OSS="$ROOT/tools/ci/oss_retry.sh"
+
+# What the container runs, and where it says how it went. The container
+# writes as OS Server's user, which needn't be this one: the folders it
+# writes are made here, writable by the group the two share, and emptied of
+# an earlier run's.
+box="$ROOT/.ci/container"
+rm -rf "$box"
+mkdir -p "$box"
+chmod 775 "$box"
+
 # The cache's read token, for Bazel's cache and the served files: a
-# client's own (~/.config/oss, as CI's user has it), else the server's
+# client's own (~/.config/oss), else the server's
 # (`oss cache token`, for OS Server's own user). Never on a command line: in
 # a file only this user and that group read, which the container moves into
 # its own .netrc.
@@ -174,9 +170,8 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 
 # In the background, waited for: a signal reaches the trap at once. It
-# waits for a free container (--wait): the server lends a few, which the
-# jobs of every repository on this Mac share (linux and ios-tests each
-# take one), so a busy server is a wait, not a failure.
+# waits for a free container (--wait): the server lends a few, so a busy
+# server is a wait, not a failure.
 "$OSS" machine lease container --wait --image="$IMAGE" --rosetta --cpus=6 --memory=16 \
     --mount="$ROOT:$ROOT" --volume="$volume" --command="bash $box/build.sh" --exports > "$box/lease" &
 child=$!

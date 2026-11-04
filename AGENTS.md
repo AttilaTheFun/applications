@@ -28,7 +28,8 @@ what comes next.
   that touch a protected file (.github/CODEOWNERS: CI, publishing and
   signing, the agents' rules, the license), which need the owner's review.
 - **Build and test on Linux, in a container:** `tools/ci/container_build.sh`
-  leases one from OS Server and builds the apps and the server there with
+  builds in the Linux container it runs in (or, run on the Mac, leases one
+  from OS Server), the apps and the server with
   rules_applecross, then runs the tests Linux can (README, "On Linux").
   The app's iPhone and iPad tests build there too
   (`--//tools/ci:ios_tests_anywhere`) and run on an iOS lease
