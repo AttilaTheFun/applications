@@ -48,6 +48,17 @@ minute's leeway). From its claims (`repository`, `ref`, `ref_type`, `sha`,
 | a `v*` tag anyone else released or pushed, any other tag, or a tag's run of another event | refused (403), not made a beta |
 | anything else: a branch, a pull request, main, a run started by hand | a beta, signed with the development identity, whatever its bundle id; a `BuildVariant` of `Production` refused |
 
+A repository is known by its name and, from its first token here, by its
+number at GitHub too (`repository_id`), which the server pins and keeps
+(config.json's `repositoryIDs`). A name is GitHub's to give again (the
+repository renamed or deleted, its owner's name taken), a number never: a
+token whose repository has the name but another number publishes nothing
+and is given no version (403). If the repository really was made again,
+`applications-server repo <owner/repo> <bundle id>…` on the server's Mac
+lets go of the old number, and the next token pins the new one.
+`applications-server status` says each repository's number, or that it
+is not pinned yet.
+
 A tag is a release's or nothing. A tag's build is a production build
 (`--config=prod`); one that a releaser did not release is refused, so its
 job fails where it can be seen, rather than published under the

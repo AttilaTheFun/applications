@@ -36,15 +36,33 @@ extension ApplicationsServer {
     /// `notary` need no restart.
     var currentSettings: ServerConfig { ServerConfig.load(paths.config) ?? config }
 
+    /// The settings, with the token's repository's number pinned if its
+    /// name had none (CIPolicy: a repository given the name later publishes
+    /// nothing), and kept so.
+    func pinning(_ claims: CIClaims, _ settings: ServerConfig) -> ServerConfig {
+        guard let (name, id) = settings.ciPolicy.unpinned(claims) else { return settings }
+        var pinned = settings
+        pinned.repositoryIDs[name] = id
+        do {
+            try pinned.save(to: paths.config)
+            config = pinned
+            FileManager.default.standardError("applications-server: \(claims.repository) is repository \(id) at GitHub, pinned")
+        } catch {
+            FileManager.default.standardError("applications-server: \(claims.repository)'s number was not kept: \(error)")
+        }
+        return pinned
+    }
+
     /// A CI job's publish: its token checked, then its build.
     func publishFromCI(_ request: HTTPRequest, token: String) async -> HTTPResponse {
-        let settings = currentSettings
+        var settings = currentSettings
         let claims: CIClaims
         do {
             claims = try await oidc.verify(token, audience: settings.oidcAudience)
         } catch {
             return .error("The token was refused: \(error)", status: 401)
         }
+        settings = pinning(claims, settings)
         guard let file = request.bodyFile else { return .error("Post the .ipa, .zip, .dmg or .apk as the body", status: 400) }
         let notes = request.headers["x-applications-notes"].flatMap { Data(base64Encoded: $0) }.map { String(decoding: $0, as: UTF8.self) } ?? ""
         let app = request.headers["x-applications-app"].flatMap { Data(base64Encoded: $0) }.map { String(decoding: $0, as: UTF8.self) }
@@ -65,17 +83,17 @@ extension ApplicationsServer {
     /// for, which must be one of its repository's (CIPolicy), then the
     /// version of the token's commit, kept as that commit's.
     func nextVersionFromCI(_ request: HTTPRequest, token: String) async -> HTTPResponse {
-        let settings = currentSettings
+        var settings = currentSettings
         let claims: CIClaims
         do {
             claims = try await oidc.verify(token, audience: settings.oidcAudience)
         } catch {
             return .error("The token was refused: \(error)", status: 401)
         }
+        settings = pinning(claims, settings)
         guard let asked = Self.versionRequest(request) else { return .error("An app and a line (MAJOR.MINOR) are needed", status: 400) }
         do {
-            try CIPolicy(repositories: settings.repositories, releasers: settings.releasers)
-                .checkVersioning(asked.app, for: claims, apps: appsByBundleID())
+            try settings.ciPolicy.checkVersioning(asked.app, for: claims, apps: appsByBundleID())
         } catch {
             return .error("Refused: \(error)", status: 403)
         }
@@ -114,7 +132,7 @@ extension ApplicationsServer {
     public func publish(ci package: URL, claims: CIClaims, settings: ServerConfig? = nil, notes: String, app: String? = nil,
                         commit: String? = nil) async throws -> Build {
         let settings = settings ?? currentSettings
-        let policy = CIPolicy(repositories: settings.repositories, releasers: settings.releasers)
+        let policy = settings.ciPolicy
         let signer = signer(settings)
         let builds = builds
         let readied = try await Self.offActor { () throws -> Readied in
@@ -185,7 +203,10 @@ extension ApplicationsServer {
     /// profiles' bundle ids and kinds. Never a team, a certificate's name,
     /// a device or a key.
     func ciStatus() -> [String] {
-        let repositories = config.repositories.keys.sorted().map { "\($0) (\(config.repositories[$0]?.joined(separator: ", ") ?? ""))" }
+        let repositories = config.repositories.keys.sorted().map { name in
+            "\(name) (\(config.repositories[name]?.joined(separator: ", ") ?? "")"
+                + (config.repositoryIDs[name.lowercased()].map { "; GitHub's repository \($0)" } ?? "; not pinned yet") + ")"
+        }
         let hasNotaryKey = !config.notaryKeyID.isEmpty && FileManager.default.fileExists(atPath: paths.notaryKey.path)
         let identities = (try? codeSigning.identities()) ?? []
         let kinds = SigningIdentity.Kind.allCases.filter { kind in identities.contains { $0.kind == kind } }.map(\.rawValue)

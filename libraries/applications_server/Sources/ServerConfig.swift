@@ -28,6 +28,12 @@ public struct ServerConfig: Codable, Sendable, Equatable {
     /// token, each with the production bundle ids it publishes (their
     /// betas' go with them): `applications-server repo`.
     public var repositories: [String: [String]]
+    /// Each repository's number at GitHub (`repository_id`), by its name in
+    /// lowercase: pinned by its first token here, and checked on every one
+    /// after, so a repository given the name later (the first renamed or
+    /// deleted) publishes nothing. `applications-server repo` again lets go
+    /// of it.
+    public var repositoryIDs: [String: String]
     /// The GitHub logins whose releases CI publishes as production:
     /// `applications-server releaser`.
     public var releasers: [String]
@@ -44,7 +50,8 @@ public struct ServerConfig: Codable, Sendable, Equatable {
 
     public init(id: String, name: String, password: String, httpPort: UInt16 = ServerConfig.defaultHTTPPort,
                 httpsPort: UInt16 = ServerConfig.defaultHTTPSPort, apnsKeyID: String = "", apnsTeamID: String = "", inbox: String = "",
-                requirePassword: Bool = true, repositories: [String: [String]] = [:], releasers: [String] = [],
+                requirePassword: Bool = true, repositories: [String: [String]] = [:], repositoryIDs: [String: String] = [:],
+                releasers: [String] = [],
                 oidcAudience: String = GitHubOIDC.defaultAudience, notaryKeyID: String = "", notaryIssuer: String = "") {
         self.id = id
         self.name = name
@@ -56,6 +63,7 @@ public struct ServerConfig: Codable, Sendable, Equatable {
         self.inbox = inbox
         self.requirePassword = requirePassword
         self.repositories = repositories
+        self.repositoryIDs = repositoryIDs
         self.releasers = releasers
         self.oidcAudience = oidcAudience
         self.notaryKeyID = notaryKeyID
@@ -76,6 +84,7 @@ public struct ServerConfig: Codable, Sendable, Equatable {
         inbox = try c.decodeIfPresent(String.self, forKey: .inbox) ?? ""
         requirePassword = try c.decodeIfPresent(Bool.self, forKey: .requirePassword) ?? true
         repositories = try c.decodeIfPresent([String: [String]].self, forKey: .repositories) ?? [:]
+        repositoryIDs = try c.decodeIfPresent([String: String].self, forKey: .repositoryIDs) ?? [:]
         releasers = try c.decodeIfPresent([String].self, forKey: .releasers) ?? []
         oidcAudience = try c.decodeIfPresent(String.self, forKey: .oidcAudience) ?? GitHubOIDC.defaultAudience
         notaryKeyID = try c.decodeIfPresent(String.self, forKey: .notaryKeyID) ?? ""
@@ -98,6 +107,9 @@ public struct ServerConfig: Codable, Sendable, Equatable {
         try config.save(to: url)
         return config
     }
+
+    /// What CI may publish here, as these settings say.
+    public var ciPolicy: CIPolicy { CIPolicy(repositories: repositories, releasers: releasers, repositoryIDs: repositoryIDs) }
 
     public func save(to url: URL) throws {
         let encoder = JSONEncoder()

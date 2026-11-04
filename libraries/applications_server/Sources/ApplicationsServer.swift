@@ -96,6 +96,8 @@ public actor ApplicationsServer {
     /// given is taken as its production's); none: it publishes nothing.
     public func setRepository(_ repository: String, bundleIDs: [String]) throws {
         config.repositories = config.repositories.filter { $0.key.lowercased() != repository.lowercased() }
+        // Its number is pinned again by its next token.
+        config.repositoryIDs[repository.lowercased()] = nil
         var ids: [String] = []
         for id in bundleIDs.map(BundleVariant.productionID) where !ids.contains(id) { ids.append(id) }
         if !ids.isEmpty { config.repositories[repository] = ids }

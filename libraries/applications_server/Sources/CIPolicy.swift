@@ -28,10 +28,14 @@ public struct CIPolicy: Sendable, Equatable {
     public var repositories: [String: [String]]
     /// The GitHub logins whose releases are published as production.
     public var releasers: [String]
+    /// Each repository's number at GitHub, by its name in lowercase, once
+    /// pinned (ServerConfig.repositoryIDs).
+    public var repositoryIDs: [String: String]
 
-    public init(repositories: [String: [String]], releasers: [String]) {
+    public init(repositories: [String: [String]], releasers: [String], repositoryIDs: [String: String] = [:]) {
         self.repositories = repositories
         self.releasers = releasers
+        self.repositoryIDs = repositoryIDs
     }
 
     /// The build's channel, by its token and its bundle id; refused,
@@ -139,13 +143,27 @@ public struct CIPolicy: Sendable, Equatable {
     }
 
     /// The token's repository as configured here, and the production bundle
-    /// ids it publishes; refused when it is not configured.
+    /// ids it publishes; refused when it is not configured, or when its name
+    /// is now another repository's than the one pinned.
     func configured(_ claims: CIClaims) throws -> (String, [String]) {
         guard let found = Self.find(claims.repository, in: repositories) else {
             throw Refusal("\(claims.repository) publishes nothing here: on the server's Mac, applications-server repo "
                           + "\(claims.repository) <bundle id>…")
         }
+        if let pinned = repositoryIDs[found.0.lowercased()], pinned != claims.repositoryID {
+            throw Refusal("\(claims.repository) is repository \(claims.repositoryID) at GitHub, not \(pinned), the one whose builds "
+                          + "this server publishes under that name: if the repository was made again, applications-server repo "
+                          + "\(found.0) <bundle id>… on the server's Mac lets go of the old one")
+        }
         return found
+    }
+
+    /// The token's repository's number, to pin: its configured name and
+    /// its `repository_id`, when that name has none pinned yet.
+    func unpinned(_ claims: CIClaims) -> (String, String)? {
+        guard let (name, _) = Self.find(claims.repository, in: repositories), repositoryIDs[name.lowercased()] == nil,
+              !claims.repositoryID.isEmpty else { return nil }
+        return (name.lowercased(), claims.repositoryID)
     }
 
     /// A repository's entry, by its name in any case (GitHub's are not
