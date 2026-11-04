@@ -1,12 +1,13 @@
 name: CI
 # Applications' CI, on self-hosted runners that lease what each job runs in
 # from OS Server (docs/CI.md): mac-tests on OS Server's own single-use ones
-# (applications-jit: a Linux container per job, its Mac work in a leased
-# VM), the rest on the owner's Mac's (applications-ci, a user of its own),
-# whose builds mount its checkout:
+# (applications-jit: a Linux container per job, its tests run on a slot of
+# OS Server's primary Mac), the rest on the owner's Mac's (applications-ci,
+# a user of its own), whose builds mount its checkout:
 # - linux: every target built in a Linux container, then the tests Linux
 #   can run (tools/ci/container_build.sh);
-# - mac-tests, after a merge: the tests that need a Mac, in a macOS VM
+# - mac-tests, after a merge: the tests that need a Mac, built on Linux in
+#   the job's container and run on a slot of OS Server's primary Mac
 #   (tools/ci/mac_vm_tests.sh);
 # - ios-tests: the iPhone and iPad tests built on Linux and run on an iOS
 #   lease's simulator (tools/ci/ios_lease_tests.sh), and, run by hand
@@ -16,7 +17,7 @@ name: CI
 #   the script). A pull request's run and a push's only build and test,
 #   comparing with the kept pictures: no proof, nothing recorded. No
 #   release without its commit's proof;
-# - beta: the Alpha (--config=alpha) for each commit on main, never a pull
+# - alpha: the Alpha (--config=alpha) for each commit on main, never a pull
 #   request's: its version asked of Applications Server and stamped in
 #   (tools/ci/next_version.sh), the Mac app and the iPhone and iPad app
 #   built in a Linux container (tools/ci/container_build.sh package), the
@@ -32,9 +33,9 @@ name: CI
 # token says where their builds came from, and which commit's version
 # they are given.
 # A pull request's run is linux and ios-tests, the Linux build and the fast
-# suites, in under ten minutes; the beta and the tests that need a Mac are
+# suites, in under ten minutes; the Alpha and the tests that need a Mac are
 # main's (2026-10-31), the proof by hand alone (2026-11-01). Each container job keeps its Bazel
-# tree in a volume of its own (applications-ci-linux, -ios, -beta), which
+# tree in a volume of its own (applications-ci-linux, -ios, -alpha, -adhoc), which
 # one runner uses one job at a time.
 on:
   pull_request:
@@ -78,8 +79,7 @@ jobs:
 
   mac-tests:
     # After a merge to main (or by hand) alone: a pull request's run is the
-    # Linux build and the fast suites (2026-10-31), and the tests
-    # that need a Mac take a VM and a cold build.
+    # Linux build and the fast suites (2026-10-31).
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     runs-on: [self-hosted, applications-jit]
     timeout-minutes: 90
@@ -87,8 +87,8 @@ jobs:
       - uses: actions/checkout@v5
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
-      - name: The tests that need a Mac, in a macOS VM
-        # exec: the runner's cancel reaches the script's trap, which releases the VM.
+      - name: The tests that need a Mac, built on Linux, run on a Mac slot
+        # exec: the runner's cancel reaches the script's trap, which releases the slot.
         run: exec tools/ci/mac_vm_tests.sh --logs "$RUNNER_TEMP/test-logs"
       - uses: actions/upload-artifact@v4
         if: failure()
@@ -137,7 +137,7 @@ jobs:
           retention-days: 30
           if-no-files-found: ignore
 
-  beta:
+  alpha:
     # After linux: nothing published from a tree that doesn't build.
     needs: linux
     # The Alpha of each commit on main, never a pull request's (2026-10-31)
@@ -170,7 +170,7 @@ jobs:
       # container.
       - name: Build
         env:
-          APPLICATIONS_CI_VOLUME: applications-ci-beta
+          APPLICATIONS_CI_VOLUME: applications-ci-alpha
         run: exec tools/ci/container_build.sh package .ci/packages --config=alpha --config=ci_device //app:applications_macos //app:applications_ios
       # Nothing is published if the icon has no dark appearance.
       - name: The icon's dark appearance
@@ -188,7 +188,7 @@ jobs:
 
   # AdHoc: a pull request's branch built by hand (workflow_dispatch on a
   # branch that is neither main nor a release branch), the Mac app and the
-  # iPhone and iPad app built as beta's are with --config=adhoc and
+  # iPhone and iPad app built as alpha's are with --config=adhoc and
   # published; the server takes them as AdHoc builds, kept a week
   # (docs/VARIANTS.md). Not after linux, which runs for pushes and pull
   # requests alone: the build itself stops a tree that doesn't build.
@@ -247,7 +247,7 @@ jobs:
         env:
           APPLICATIONS_CI_CODE: ${{ secrets.APPLICATIONS_CI_CODE }}
         run: tools/ci/next_version.sh Applications app/Info.mac.plist app/Info.ios.plist
-      # In a Linux container, as beta's, the Mac's icon checked the same way.
+      # In a Linux container, as alpha's, the Mac's icon checked the same way.
       - name: Build
         run: exec tools/ci/container_build.sh package .ci/packages --config=prod --config=ci_device //app:applications_macos //app:applications_ios
       - name: The icon's dark appearance

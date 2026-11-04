@@ -135,7 +135,9 @@ final class ServerTests: XCTestCase {
     /// certificate sent in the chain, trusted by a client that pins it.
     func testHTTPSAnswersAClientThatTrustsTheAuthority() async throws {
         let (server, folder) = try await makeServer()
-        let port = UInt16.random(in: 47000...47900)
+        // A port the system chooses: tests on OS Server's Mac slots share
+        // the primary's loopback, and a fixed or random one may be taken.
+        let port = try freePort()
         let listener = try HTTPListener(port: port, identity: try server.tlsIdentity(), uploads: folder, uploadPath: ApplicationsServer.publishPath,
                                         handle: { await server.handle($0) })
         listener.start { XCTFail("the listener failed: \($0)") }
@@ -146,5 +148,27 @@ final class ServerTests: XCTestCase {
         let (data, response) = try await session.data(from: try XCTUnwrap(URL(string: "https://127.0.0.1:\(port)/api/hello")))
         XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200)
         XCTAssertEqual(try WireCoding.decoder().decode(Hello.self, from: data).name, "Test Mac")
+    }
+
+    /// A free TCP port on the loopback, which the system chose: bound to
+    /// port 0, read back, and closed for the listener to take.
+    private func freePort() throws -> UInt16 {
+        let fd = socket(AF_INET, SOCK_STREAM, 0)
+        guard fd >= 0 else { throw POSIXError(.EMFILE) }
+        defer { close(fd) }
+        var address = sockaddr_in()
+        address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+        address.sin_family = sa_family_t(AF_INET)
+        address.sin_addr.s_addr = inet_addr("127.0.0.1")
+        address.sin_port = 0
+        var length = socklen_t(MemoryLayout<sockaddr_in>.size)
+        let bound = withUnsafeMutablePointer(to: &address) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                // Darwin's: inside an XCTestCase, `bind` is NSObject's.
+                Darwin.bind(fd, $0, length) == 0 && getsockname(fd, $0, &length) == 0
+            }
+        }
+        guard bound else { throw POSIXError(.EADDRINUSE) }
+        return UInt16(bigEndian: address.sin_port)
     }
 }

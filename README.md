@@ -77,8 +77,9 @@ server signs, and docs/Updates.md how an app learns of its updates.
   appearance; tools/ci/ios_lease_tests.sh, which runs the iPhone and iPad
   tests on an iOS lease and makes the proof, its screens compared with
   their pictures at its base (tools/ci/proof_baseline: a push's commit
-  before); tools/ci/mac_vm_tests.sh, which runs the tests that need a Mac
-  in a macOS VM (through tools/ci/mac_vm.sh); tools/ci/next_version.sh,
+  before); tools/ci/mac_vm_tests.sh, which builds the tests that need a
+  Mac on Linux (tools/ci/build_mac_tests.sh) and runs them on a slot of OS
+  Server's primary Mac; tools/ci/next_version.sh,
   which stamps a CI job's builds with the version the server gives its
   commit; tools/ci/publish_from_ci.sh, which publishes them with its
   token (both through tools/ci/connect_from_ci.sh). CI's workflow is
@@ -115,7 +116,7 @@ tools coming from that server's files:
     tools/ci/container_build.sh                       # what CI runs: the builds below, then the tests
     tools/ci/container_build.sh build //app:applications_ios
     tools/ci/container_build.sh test //libraries/...
-    tools/ci/container_build.sh package .ci/packages --config=beta //app:applications_macos   # the .zip copied out (CI's beta builds it on a Mac: docs/CI.md)
+    tools/ci/container_build.sh package .ci/packages --config=beta //app:applications_macos   # the .zip copied out (as CI's alpha builds it: docs/CI.md)
 
 With no arguments it builds `//server`, `//app:applications_ios`,
 `//app:applications_macos` and `//libraries/...`, then runs `bazel test
