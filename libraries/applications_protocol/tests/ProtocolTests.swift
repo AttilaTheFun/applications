@@ -32,6 +32,33 @@ final class ProtocolTests: XCTestCase {
         XCTAssertEqual(app.build(installed: installed("0.23", "23"))?.executableUUID, "A")
     }
 
+    /// Builds of commits that changed nothing of the app link the same
+    /// executable (Bazel's builds are reproducible), and a promoted
+    /// production build keeps its Alpha's: the executable alone does not
+    /// say which build is here, its numbers and variant do too. An older
+    /// Alpha with the newest's executable is not the newest.
+    func testTheSameExecutableIsNotTheSameBuild() {
+        func build(_ id: String, _ version: String, _ variant: String) -> Build {
+            Build(id: id, bundleID: "app", name: "App", version: version, buildNumber: "1", published: Date(), size: 0,
+                  executableUUID: "SAME", channel: variant == "Production" ? .production : .beta, buildVariant: variant)
+        }
+        let alpha = AppBuilds(bundleID: "app", name: "App", builds: [build("56", "0.10.56", "Alpha"), build("55", "0.10.55", "Alpha"),
+                                                                     build("54", "0.10.54", "Alpha")])
+        let production = AppBuilds(bundleID: "app", name: "App", builds: [build("p56", "0.10.56", "Production")])
+        func installed(_ version: String, _ variant: String) -> InstalledBuild {
+            InstalledBuild(bundleID: "app", version: version, buildNumber: "1", executableUUID: "SAME", variant: variant)
+        }
+        let older = installed("0.10.54", "Alpha")
+        XCTAssertEqual(alpha.build(installed: older)?.id, "54")
+        XCTAssertEqual(alpha.standing(older), .updateAvailable, "not the newest, whose executable it shares")
+        XCTAssertEqual(alpha.standing(installed("0.10.56", "Alpha")), .upToDate)
+        // The promoted build and its Alpha: one executable, one version, two variants.
+        let groups = [alpha, production]
+        XCTAssertEqual(AppBuilds.holder(of: installed("0.10.56", "Production"), among: groups)?.builds.first?.id, "p56")
+        XCTAssertEqual(AppBuilds.holder(of: installed("0.10.56", "Alpha"), among: groups)?.builds.first?.id, "56")
+        XCTAssertNil(production.build(installed: installed("0.10.56", "Alpha")))
+    }
+
     /// One bundle id is one app installed at a time, its Alpha's, Beta's,
     /// AdHoc's and Production's builds listed apart: the build installed is
     /// held by one group: of its executable, else of its variant, else of
