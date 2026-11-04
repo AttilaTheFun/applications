@@ -28,11 +28,13 @@ extension ApplicationsServer {
         // A CI job publishes with its OIDC token in place of the password,
         // which decides what it may publish and as what, and the server
         // signs it; it asks for its build's version with the same token
-        // before it builds (ApplicationsServer+CI).
+        // before it builds (ApplicationsServer+CI), and a release's job
+        // has its commit's Alphas promoted (ApplicationsServer+Promotion).
         if request.method == "POST", let token = Self.bearer(request), GitHubOIDC.isToken(token) {
             switch parts {
             case ["publish"]: return await publishFromCI(request, token: token)
             case ["next-version"]: return await nextVersionFromCI(request, token: token)
+            case ["promote"]: return await promoteFromCI(request, token: token)
             default: break
             }
         }
