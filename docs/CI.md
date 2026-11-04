@@ -434,6 +434,41 @@ when the token may not publish the build (its repository, its bundle id,
 its tag); 400 when the package is refused (a profile missing, a signature
 that does not verify).
 
+## Production by promotion: tools/ci/promote_from_ci.sh
+
+2026-11-02, the owner: "the alpha builds and production builds should be
+identical today modulo the plist key. I test an alpha build and when I'm
+happy with it we promote it to a release which stamps it."
+
+    tools/ci/promote_from_ci.sh [--notes-file <notes.md>]
+
+    POST /api/promote    Authorization: Bearer <the release job's OIDC token>, over HTTPS
+                         X-Applications-Notes (base64): the release's notes.
+
+A release's job builds nothing: with its token (connect_from_ci.sh, as
+publish_from_ci.sh has it), it asks the server to promote the Alphas main's
+CI published of the release's commit. For each (the newest of each bundle
+id and platform, among the token's repository's), the server:
+
+1. copies its package, and sets its app's Info.plist `BuildVariant` to
+   `Production` (a Mac app's stapled ticket taken out with it);
+2. signs it again as a release's build is: an iPhone app with the
+   production identity and its scheme given, a Mac app with Developer ID,
+   notarized and stapled;
+3. keeps it as production, of the same version, beside the Alpha, which
+   stays as it was.
+
+The token must be a release's (CIPolicy, above): a release branch's push,
+or a `v*` tag's, by a releaser. The server answers 201 with the production
+builds (asked again, the same ones: nothing is promoted twice); 401 when
+it refuses the token; 403 when the token is not a release's; 404 when it
+keeps no Alpha of the commit. An Alpha that is not its app's newest is
+kept a week, so a release is cut within a week of its commit, or its
+commit is the app's newest.
+
+Not promoted: an Android app's Alpha. The server does not sign Android
+apps, so it cannot stamp one; an Android release still builds.
+
 ## Setting up a repository
 
 On the server's Mac:

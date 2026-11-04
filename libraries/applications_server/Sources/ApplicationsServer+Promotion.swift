@@ -15,8 +15,9 @@ import PipelineServer
 ///                          X-Applications-Notes (base64): the release's notes. The token's commit's Alphas of its
 ///                          repository's bundle ids, promoted: 201 with the production builds, those promoted before
 ///                          among them (asked again, the same). 401 when the token is refused; 403 when it is not a
-///                          release's (a v* tag by a releaser); 404 when the server keeps no Alpha of the commit (an
-///                          Alpha is kept a week once it is not its app's newest).
+///                          release's (a release branch's push, or a v* tag's, by a releaser: CIPolicy); 404 when the
+///                          server keeps no Alpha of the commit (an Alpha is kept a week once it is not its app's
+///                          newest).
 ///
 /// An Android app's Alpha is not promoted: the server does not sign
 /// Android apps, so it cannot stamp one; its release still builds it.
@@ -50,8 +51,11 @@ extension ApplicationsServer {
         let settings = settings ?? currentSettings
         let policy = CIPolicy(repositories: settings.repositories, releasers: settings.releasers)
         let (repository, ids) = try policy.configured(claims)
-        guard claims.refType == "tag" else {
-            throw CIPolicy.Refusal("\(claims.ref) is not a release's tag: a release (v<version>, released by a releaser) is promoted")
+        // A release's token alone (CIPolicy): its release branch's push, or a
+        // v* tag's, by a releaser; a releaser's other runs make betas.
+        if let id = ids.first, try policy.channel(for: claims, bundleID: id) != .production {
+            throw CIPolicy.Refusal("\(claims.ref) is not a release's: a release branch (release-MAJOR-MINOR) or a v* tag, pushed by a "
+                                   + "releaser, is promoted")
         }
         let kept = builds.all().filter { $0.origin?.commit == claims.sha && ids.contains($0.productionBundleID) }
         var alphas: [Build] = []

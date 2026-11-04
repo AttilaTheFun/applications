@@ -60,17 +60,18 @@ final class PromotionTests: XCTestCase {
         return alphas
     }
 
-    /// The release's token promotes the commit's Alphas: each a production
-    /// build of the same version, stamped Production, the iPhone app's
-    /// signed with the distribution identity and its ad hoc profile and
-    /// given its scheme, the Mac app's notarized; asked again, the same.
+    /// The release's token (its release branch's push) promotes the
+    /// commit's Alphas: each a production build of the same version,
+    /// stamped Production, the iPhone app's signed with the distribution
+    /// identity and its ad hoc profile and given its scheme, the Mac app's
+    /// notarized; asked again, the same.
     func testAReleasePromotesItsCommitsAlphas() async throws {
         let setup = try await makeServer()
         let alphas = try await publishAlphas(setup)
         XCTAssertEqual(alphas.map(\.channel), [.beta, .beta])
         let signedBefore = setup.signing.signed.count
-        let release = try TestToken.token(TestToken.claims(ref: "refs/tags/v0.23.4", refType: "tag", event: "release", sha: commit),
-                                          key: setup.key)
+        // A release is its release branch's push.
+        let release = try TestToken.token(TestToken.claims(ref: "refs/heads/release-0-23", sha: commit), key: setup.key)
         let notes = Data("Visor 0.23.4".utf8).base64EncodedString()
         let promoted = await post(setup, "/api/promote", token: release, headers: ["x-applications-notes": notes])
         XCTAssertEqual(promoted.status, 201, String(decoding: promoted.data, as: UTF8.self))
@@ -97,7 +98,10 @@ final class PromotionTests: XCTestCase {
             let kept = await setup.server.builds.package(alpha.id)
             XCTAssertEqual(try IPAMetadata.read(try XCTUnwrap(kept)).buildVariant, "Alpha")
         }
-        let again = await post(setup, "/api/promote", token: release)
+        // Asked again, by the commit's v* tag (as releases were before release branches): the same builds.
+        let tag = try TestToken.token(TestToken.claims(ref: "refs/tags/v0.23.4", refType: "tag", event: "release", sha: commit),
+                                      key: setup.key)
+        let again = await post(setup, "/api/promote", token: tag)
         XCTAssertEqual(again.status, 201, String(decoding: again.data, as: UTF8.self))
         XCTAssertEqual(Set(try WireCoding.decoder().decode([Build].self, from: again.data).map(\.id)), Set(builds.map(\.id)))
         let all = await setup.server.builds.all()
@@ -105,15 +109,15 @@ final class PromotionTests: XCTestCase {
     }
 
     /// Only a release's token promotes, and only what its commit has:
-    /// main's token, a tag someone else pushed, or another repository's
-    /// token is refused; a commit with no Alpha here is not found.
+    /// main's token or a tag someone else pushed is refused; another
+    /// repository's, or a commit with no Alpha here, finds nothing.
     func testWhatIsNotAReleaseIsNotPromoted() async throws {
         let setup = try await makeServer()
         _ = try await publishAlphas(setup)
         let signedBefore = setup.signing.signed.count
         let main = await post(setup, "/api/promote", token: try TestToken.token(TestToken.claims(sha: commit), key: setup.key))
         XCTAssertEqual(main.status, 403)
-        XCTAssertTrue(said(main).contains("not a release's tag"), said(main))
+        XCTAssertTrue(said(main).contains("not a release's"), said(main))
         let byBot = try TestToken.token(TestToken.claims(ref: "refs/tags/v0.23.4", refType: "tag", event: "push", actor: "agent-app[bot]",
                                                          sha: commit), key: setup.key)
         let bot = await post(setup, "/api/promote", token: byBot)
