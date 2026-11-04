@@ -129,6 +129,12 @@ final class PromotionTests: XCTestCase {
         XCTAssertEqual(another.status, 404, "Visor's Alphas are not Noson's")
         let other = try TestToken.token(TestToken.claims(ref: "refs/tags/v0.23.5", refType: "tag", event: "release",
                                                          sha: "fedcba9876543210fedcba9876543210fedcba98"), key: setup.key)
+        // A repository given Visor's name later (another number) promotes nothing.
+        let usurper = try TestToken.token(TestToken.claims(repositoryID: "2000", ref: "refs/heads/release-0-23", sha: commit),
+                                          key: setup.key)
+        let renamed = await post(setup, "/api/promote", token: usurper)
+        XCTAssertEqual(renamed.status, 403)
+        XCTAssertTrue(said(renamed).contains("is repository 2000 at GitHub, not 1000"), said(renamed))
         let missing = await post(setup, "/api/promote", token: other)
         XCTAssertEqual(missing.status, 404)
         XCTAssertTrue(said(missing).contains("No Alpha of fedcba9876543210fedcba9876543210fedcba98"), said(missing))

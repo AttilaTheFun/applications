@@ -25,13 +25,14 @@ extension ApplicationsServer {
     /// A release job's promotion: its token checked, then its commit's
     /// Alphas promoted.
     func promoteFromCI(_ request: HTTPRequest, token: String) async -> HTTPResponse {
-        let settings = currentSettings
+        var settings = currentSettings
         let claims: CIClaims
         do {
             claims = try await oidc.verify(token, audience: settings.oidcAudience)
         } catch {
             return .error("The token was refused: \(error)", status: 401)
         }
+        settings = pinning(claims, settings)
         let notes = request.headers["x-applications-notes"].flatMap { Data(base64Encoded: $0) }.map { String(decoding: $0, as: UTF8.self) } ?? ""
         do {
             let promoted = try await promote(claims: claims, settings: settings, notes: notes)
@@ -49,7 +50,7 @@ extension ApplicationsServer {
     /// of a bundle id and platform, one promoted before returned as it was.
     public func promote(claims: CIClaims, settings: ServerConfig? = nil, notes: String) async throws -> [Build] {
         let settings = settings ?? currentSettings
-        let policy = CIPolicy(repositories: settings.repositories, releasers: settings.releasers)
+        let policy = settings.ciPolicy
         let (repository, ids) = try policy.configured(claims)
         // A release's token alone (CIPolicy): its release branch's push, or a
         // v* tag's, by a releaser; a releaser's other runs make betas.
