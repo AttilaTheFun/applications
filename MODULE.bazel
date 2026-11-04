@@ -66,13 +66,16 @@ single_version_override(
 # Linux alone, by the builder that has the SDKs (.bazelrc's apple_on_linux),
 # so a Mac builds as before and a Linux without them builds what runs on
 # Linux.
-# From the project's registry: its main at 9727e5b, for every module
+# From the project's registry: its main at a2b0558, for every module
 # (rules_apple, as its patch leaves it, asks for 0.0.3, which no registry
-# holds).
-bazel_dep(name = "rules_applecross", version = "0.0.3.9727e5b")
+# holds). Since 9727e5b: a Mac test's bundle built on Linux runs on a Mac
+# (its run paths reach the installed Xcode's usr/lib), the Swift toolchain
+# requests rules_swift's Xcode features (whole-module optimization for
+# -c opt), Swift symbol graphs, and loading with rules_swift 4.1.
+bazel_dep(name = "rules_applecross", version = "0.0.3.a2b0558")
 single_version_override(
     module_name = "rules_applecross",
-    version = "0.0.3.9727e5b",
+    version = "0.0.3.a2b0558",
 )
 apple_cross_toolchain = use_extension("@rules_applecross//toolchain:extensions.bzl", "apple_cross_toolchain")
 # The Swift that built Xcode 27.2's SDKs.
