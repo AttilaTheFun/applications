@@ -30,6 +30,19 @@ public struct InstalledBuild: Codable, Sendable, Hashable {
         return byVersion == .orderedSame ? Self.compare(buildNumber, build.buildNumber) : byVersion
     }
 
+    /// Whether this is `build`: the same numbers, and the same executable
+    /// and variant where both say theirs. The executable alone does not
+    /// tell: a build of a commit that changed nothing of the app links the
+    /// same executable as the one before it (Bazel's builds are
+    /// reproducible), and a production build promoted from an Alpha keeps
+    /// the Alpha's; their numbers and variants tell them apart.
+    public func isBuild(_ build: Build) -> Bool {
+        guard compareNumbers(to: build) == .orderedSame else { return false }
+        if !executableUUID.isEmpty, let uuid = build.executableUUID, !uuid.isEmpty, uuid != executableUUID { return false }
+        if let variant, variant != build.variant { return false }
+        return true
+    }
+
     static func compare(_ left: String, _ right: String) -> ComparisonResult {
         let a = left.split(separator: ".").map { Int($0) ?? 0 }
         let b = right.split(separator: ".").map { Int($0) ?? 0 }
