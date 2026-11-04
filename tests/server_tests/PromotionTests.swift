@@ -1,9 +1,10 @@
 import ApplicationsProtocol
-@testable import ApplicationsServer
 import Foundation
+import PipelineClient
 import PipelineHTTP
 import PipelineServer
 import XCTest
+@testable import ApplicationsServer
 
 /// A release made production by promotion (`POST /api/promote`): main's
 /// Alphas of the release's commit copied, stamped Production and signed
