@@ -79,15 +79,26 @@ public struct LaunchAgent: Sendable {
         }
         unload()
         try definitionData().write(to: plist, options: .atomic)
-        do {
-            try ProcessRunner.run("/bin/launchctl", ["bootstrap", domain, plist.path])
-        } catch {
-            // launchd can still be letting the one before go: once more.
-            Thread.sleep(forTimeInterval: 2)
-            try ProcessRunner.run("/bin/launchctl", ["bootstrap", domain, plist.path])
+        // launchd can still be letting the one before go after bootout
+        // says it has, and refuses the new one meanwhile ("Bootstrap
+        // failed: 5: Input/output error"): tried again, waiting longer each
+        // time, for up to half a minute.
+        var attempt = 0
+        while true {
+            do {
+                try ProcessRunner.run("/bin/launchctl", ["bootstrap", domain, plist.path])
+                break
+            } catch {
+                guard attempt < Self.bootstrapWaits.count else { throw error }
+                Thread.sleep(forTimeInterval: Self.bootstrapWaits[attempt])
+                attempt += 1
+            }
         }
         return standing()
     }
+
+    /// How long `install` waits before each bootstrap tried again.
+    static let bootstrapWaits: [TimeInterval] = [1, 2, 4, 8, 15]
 
     /// The agent stopped and let go, its plist removed (the binary stays,
     /// for the command's other uses): whether there was one.
@@ -99,13 +110,13 @@ public struct LaunchAgent: Sendable {
         return had
     }
 
-    /// The service stopped, waiting (a few seconds at most) until launchd
+    /// The service stopped, waiting (ten seconds at most) until launchd
     /// has let it go.
     private func unload() {
         guard standing().loaded else { return }
         _ = try? ProcessRunner.run("/bin/launchctl", ["bootout", service])
         var waited = 0
-        while waited < 20, standing().loaded {
+        while waited < 40, standing().loaded {
             Thread.sleep(forTimeInterval: 0.25)
             waited += 1
         }
