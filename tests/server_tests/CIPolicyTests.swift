@@ -298,7 +298,7 @@ final class CIPublishTests: XCTestCase {
         XCTAssertEqual(published.status, 201, String(decoding: published.data, as: UTF8.self))
         let pinned = await setup.server.config.repositoryIDs
         XCTAssertEqual(pinned, ["attilathefun/visor": "1000"])
-        XCTAssertEqual(ServerConfig.load(setup.server.paths.config)?.repositoryIDs, ["attilathefun/visor": "1000"], "kept")
+        XCTAssertEqual(ServerConfig.load(ServerPaths(root: setup.folder.appendingPathComponent("support")).config)?.repositoryIDs, ["attilathefun/visor": "1000"], "kept")
         let usurper = try TestToken.token(TestToken.claims(repositoryID: "2000"), key: setup.key)
         let refused = await publish(setup, try TestIPA.make(in: setup.folder), token: usurper)
         XCTAssertEqual(refused.status, 403)
