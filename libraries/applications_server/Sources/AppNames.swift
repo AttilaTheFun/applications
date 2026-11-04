@@ -1,7 +1,7 @@
 import Foundation
 
 /// Which app a bundle id's builds are builds of, where its own name does
-/// not say (an Android build of "Visor Isomer" whose launcher label is
+/// not say (an Android build of "Visor Lite" whose launcher label is
 /// "Visor"), kept in apps.json: `applications-server app <bundle id> <app>`.
 public struct AppNames: Sendable {
     let file: URL
@@ -24,7 +24,7 @@ public struct AppNames: Sendable {
         try JSONEncoder().encode(names).write(to: file, options: .atomic)
     }
 
-    /// The app named by a release notes' marker, `<!-- app: Visor Isomer -->`
+    /// The app named by a release notes' marker, `<!-- app: Visor Lite -->`
     /// on a line of its own (how an inbox upload names its app), and the
     /// notes without it.
     public static func marker(in notes: String) -> (app: String?, notes: String) {

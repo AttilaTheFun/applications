@@ -169,7 +169,7 @@ final class ProtocolTests: XCTestCase {
         let beta = build("com.LoganShire.Visor.Beta", "Visor β"), production = build("com.LoganShire.Visor", "Visor")
         XCTAssertEqual(beta.productionBundleID, production.bundleID)
         XCTAssertEqual(beta.identity, production.identity)
-        XCTAssertEqual(beta.identity(["com.LoganShire.Visor": "Visor Isomer"]), "Visor Isomer", "named by the production's id")
+        XCTAssertEqual(beta.identity(["com.LoganShire.Visor": "Visor Lite"]), "Visor Lite", "named by the production's id")
         XCTAssertEqual(beta.identity(["com.LoganShire.Visor.Beta": "Blue"]), "Blue", "or its own")
     }
 }
