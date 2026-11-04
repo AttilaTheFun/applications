@@ -108,23 +108,29 @@ The server's Mac needs the identities and profiles (docs/SERVER.md,
 ## The workflow
 
 This repository's is `.github/workflows/ci.yml`, the CI pilot
-(2026-10-28). It runs on a self-hosted runner (label
-`applications-ci`) on the runner's Mac:
+(2026-10-28). Every job runs on OS Server's single-use self-hosted runners
+(label `applications-jit`, since 2026-11-04; before that, all but
+`mac-tests` ran on a runner of the owner's Mac, as a hidden user of its
+own): a new Linux container for each job, of Visor's agent image (Bazel,
+Swift, Python, unzip), its CPUs and memory OS Server's `ci.sizes` for this
+repository, with:
 
-- a hidden macOS user of its own, `ci`, from /Users/Shared/ci/applications,
-  with no access to the owner's home or keychain;
-- on its PATH, OS Server's command line, bazelisk and Xcode's tools;
-- in its ~/.config/oss, OS Server's lease token and the cache's read token.
+- `oss` on its PATH, with the job's grant to lease and use what it needs:
+  a slot of OS Server's primary Mac (`mac`), an iOS simulator (`ios`);
+- in its ~/.bazelrc, OS Server's Bazel cache (read-only), and in its
+  ~/.netrc the cache's read token, which opens OS Server's files too;
+- in OSS_SERVERS, OS Server's addresses, the first of them the host
+  Bazel's downloader config names (tools/ci/oss_files.sh).
 
-Each job leases what it runs in from that Mac's OS Server and gives it
+Each job builds in its own container, leases what needs a Mac and gives it
 back however it ends:
 
 | Job | Runs for | What it does |
 | --- | --- | --- |
-| `linux` | pull requests, main | `tools/ci/container_build.sh`: every target built in a Linux container (the apps and the server with rules_applecross), then the tests Linux runs. `alpha` and `release` build the Mac app they publish the same way (below: "The published Mac apps are built on Linux") |
+| `linux` | pull requests, main | `tools/ci/container_build.sh`: every target built in the job's container (the apps and the server with rules_applecross), then the tests Linux runs. `alpha` and `release` build the Mac app they publish the same way (below: "The published Mac apps are built on Linux") |
 | `mac-tests` | main, by hand | `tools/ci/mac_vm_tests.sh`: the tests that need a Mac, built on Linux in the job's container and run on a slot of OS Server's primary Mac (below) |
 | `ios-tests` | pull requests, main, by hand | `tools/ci/ios_lease_tests.sh`: the iPhone and iPad tests built on Linux and run on an iOS lease (`oss machine xctest`); by hand alone, then the proof from their result bundle (below: "Tests on an iOS lease") |
-| `alpha` | main, after `linux` | the Alpha (`--config=alpha`): the version stamped in (tools/ci/next_version.sh, below: "Versions"), the Mac app and the iPhone and iPad app built with `--config=alpha` in a Linux container (`tools/ci/container_build.sh package`; the iPhone's a device build signed ad hoc, below: "The iPhone app"), the Mac's icon checked for the dark appearance (`tools/ci/check_mac_icons.sh`), and both published with tools/ci/publish_from_ci.sh: a beta, which the server signs (the Mac's with Developer ID, notarized; the iPhone's with the development identity and profiles) |
+| `alpha` | main, after `linux` | the Alpha (`--config=alpha`): the version stamped in (tools/ci/next_version.sh, below: "Versions"), the Mac app and the iPhone and iPad app built with `--config=alpha` in the job's container (`tools/ci/container_build.sh package`; the iPhone's a device build signed ad hoc, below: "The iPhone app"), the Mac's icon checked for the dark appearance on a Mac slot (`tools/ci/check_mac_icons.sh`), and both published with tools/ci/publish_from_ci.sh: a beta, which the server signs (the Mac's with Developer ID, notarized; the iPhone's with the development identity and profiles) |
 | `adhoc` | by hand (`workflow_dispatch`) on a branch that is neither main nor a release branch | the same with `--config=adhoc`: an AdHoc build, which the server keeps a week (docs/VARIANTS.md) |
 | `release` | a push to a `release-*` branch | the same with `--config=prod` once the branch's commit is found on main: production |
 
@@ -137,10 +143,10 @@ bisect a regression). Before that (the owner, 2026-10-31: "Beta
 builds and proof should be per master commit not PR commit. The CI that
 runs per pr commit and must pass should ideally consist of building the
 apps and tests on linux and then running relatively fast test suites.").
-Each container job keeps its Bazel tree between runs in a volume of its own
-(`APPLICATIONS_CI_VOLUME`: applications-ci-linux, -ios, -alpha, -adhoc), so a run
-builds what changed; the runner takes one job at a time, so no two
-containers share one.
+A job's container is new each run: its builds start from OS Server's Bazel
+cache, not a tree of their own. (On the owner's Mac's runner, each job kept
+its tree in a volume of its own, applications-ci-linux, -ios, -alpha and
+-adhoc, which went with it.)
 
 - **Which commit.** A pull request's jobs check out its head, not GitHub's
   merge of it: the commit its builds and its proof are listed under.
@@ -153,30 +159,24 @@ containers share one.
 - **Untrusted text** (a pull request's title, a release's body) reaches the
   shell through `env`, never `${{ }}` inside `run`.
 - **Leases.** A step that leases execs its script, so the runner's cancel
-  reaches it, and the script's trap releases the container or the VM on
-  every path. A job killed outright leaves its lease, and a container's
-  volume, until it runs out (an hour).
-- **The container's build is its main process.** `oss machine run
-  --inside` sends its command over the container's socket, in OS Server's
-  own folder, which only OS Server's user reaches, and the runner is a user
-  of its own. So container_build.sh leases the container with `--command`,
-  a script it writes into .ci/container, which runs the build there and
-  writes its log and exit status beside it. The script follows the log,
-  passes the status on and releases the container. The cache's read token
-  (the runner's own, ~/.config/oss/cache-read-token) reaches the
-  container's .netrc through a file there, never a command line. This
-  lasts until OS Server runs a container's commands through its API.
-- **Builds come out of the container** through `container_build.sh package
-  <dir> <bazel args…>`. Bazel's tree is the container's own volume, deleted
-  with the lease, so the targets' files (by `bazel cquery --output=files`)
-  are copied into `<dir>` in the checkout. The checkout is the runner's,
-  and the container writes as OS Server's user, so .ci/container and
-  `<dir>` are made writable by the group the two share. `alpha` and
-  `release` took theirs so until they built on a Mac (below).
-- **This Mac's tailnet name**, where the container reaches OS Server's
-  files, comes from Tailscale's command line. That answers only the user
-  signed in to Tailscale's app, so for CI the script asks MagicDNS for the
-  name of the Mac's tailnet address instead.
+  reaches it, and the script's trap releases the slot or the simulator on
+  every path. A job killed outright leaves its lease until it runs out.
+- **What needs a Mac** goes to a slot of OS Server's primary Mac
+  (tools/ci/mac_slot.sh: `oss machine lease mac`, then `upload`, `exec`
+  and `download`): Xcode's `assetutil` and `xcresulttool`, and the proof's
+  CoreGraphics diffs.
+- **Builds come out of Bazel's tree** through `container_build.sh package
+  <dir> <bazel args…>`: the targets' files (by `bazel cquery
+  --output=files`) copied into `<dir>` in the checkout.
+- **By hand from a Mac**, container_build.sh leases a container from that
+  Mac's OS Server instead (its checkout mounted, which only the server's
+  own Mac may), the build its main process (`--command`): a script it
+  writes into .ci/container, which runs the build there and writes its log
+  and exit status beside it, which the script follows, passing the status
+  on and releasing the container. The cache's read token reaches the
+  container's .netrc through a file there, never a command line. It needs
+  OSS_FILES_HOST (or OSS_SERVERS): the name the container reaches OS
+  Server's files by.
 - **macOS's bash is 3.2.** It reads a byte of "…" after `$name` as part of
   the name, so the scripts write `${name}…`. When an unset variable stops a
   script under `set -eu`, it runs the EXIT trap with `$?` 0 and ends with
@@ -184,7 +184,8 @@ containers share one.
   is what hid main's first publish: the job passed and nothing was sent.
 
 Another repository copies `alpha` and `release`, with
-tools/ci/container_build.sh, tools/ci/check_mac_icons.sh,
+tools/ci/container_build.sh and the oss_files.sh it sources,
+tools/ci/check_mac_icons.sh and the mac_slot.sh it sources,
 tools/ci/next_version.sh, tools/ci/publish_from_ci.sh and the
 connect_from_ci.sh both source, and names its own app, Info.plists and
 targets.
@@ -200,11 +201,11 @@ Xcode does since its 0.0.3.3251084 (its #242), and `.bazelrc`'s
 the icon from its layers). Until then it compiled one flat image, and
 `alpha` and `release` built the app they publish in a macOS VM.
 
-Now they build it in the Linux container (`tools/ci/container_build.sh
+Now they build it in the job's Linux container (`tools/ci/container_build.sh
 package .ci/packages …`, which builds the checkout as the Version step
 stamped it), and `tools/ci/check_mac_icons.sh .ci/packages` checks each
-Mac app's icon on the runner's Mac: it unzips the app, runs `xcrun
-assetutil --info` on its Assets.car, and fails if it has no
+Mac app's icon: it unzips the app, runs `xcrun assetutil --info` on its
+Assets.car on a Mac slot, and fails if it has no
 `NSAppearanceNameDarkAqua` rendition (or no Assets.car). So a flat icon is
 never published: the job fails before its Publish step. `alpha` holds the
 token (`id-token: write`) and waits for `linux`.
@@ -238,18 +239,18 @@ owner reviews before publishing it. The scripts make the proof only with
 ### Tests on an iOS lease
 
 `tools/ci/ios_lease_tests.sh [--proof <dir>] [--logs <dir>] [--kind quick|full]`
-builds //tests/app_tests and its host in the Linux container
+builds //tests/app_tests and its host in the job's container
 (`container_build.sh package`, with `--//tools/ci:ios_tests_anywhere`, which
 lets an iOS test build off a Mac), leases an iOS simulator (an iPhone 17, as
 `.bazelrc`'s tests run on), and runs it with `oss machine xctest`, keeping
 its JUnit and result bundle. A lease's run takes no environment, so the
 proof's pictures are the ones the snapshot library attaches to the results
 (every picture, kept whether the test passes or not), exported with
-`xcresulttool export attachments` on the runner's Mac. Then, with
-`--proof`, the proof is made: each picture against the one kept at the base
-(`git show <base>:tests/app_tests/Snapshots/<name>.png`), with
-tools/ci/snapshot_diff.swift and tools/ci/proof_baseline built by the
-runner's swiftc. It replaced the macOS VM's recording on 2026-10-30, when
+`xcresulttool export attachments` on a Mac slot. Then, with `--proof`, the
+proof is made: each picture against the one kept at the base (`git show
+<base>:tests/app_tests/Snapshots/<name>.png`), by
+tools/ci/snapshot_diff.swift (CoreGraphics), built and run on the slot,
+from tools/ci/proof_baseline's base, built by the job's swiftc. It replaced the macOS VM's recording on 2026-10-30, when
 both made the same proof of main (375f9fa: 7 screens, byte for byte).
 
 By hand, the job uploads the proof as the artifact `proof`

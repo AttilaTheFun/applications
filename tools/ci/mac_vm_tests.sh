@@ -75,23 +75,13 @@ run() {
 # The build, in the job's own container (applications-jit: a Linux
 # container with OS Server's read-only Bazel cache in its ~/.bazelrc and the
 # cache's read token in its ~/.netrc, which opens OS Server's files too).
-# Bazel fetches the SDK archive (container_build.sh's) and the ported tools
-# from OS Server's files, by SHA-256, through the downloader config written
-# here, its host the first of OSS_SERVERS (OSS_FILES_HOST names another).
-sdk="$(sed -n 's/^SDK_SHA256="\(.*\)"$/\1/p' "$ROOT/tools/ci/container_build.sh")"
-[ -n "$sdk" ] || { echo "$me: no SDK archive in tools/ci/container_build.sh" >&2; exit 1; }
-host="${OSS_FILES_HOST:-}"
-if [ -z "$host" ]; then
-    host="${OSS_SERVERS:-}"
-    host="${host%%[ ,]*}"
-    host="${host#*://}"
-    host="${host%%[:/]*}"
-fi
-[ -n "$host" ] || { echo "$me: no host for OS Server's files (OSS_SERVERS): set OSS_FILES_HOST" >&2; exit 1; }
-cat > "$work/downloader.cfg" << EOF
-rewrite apple-sdks\.invalid/.* http://$host:7490/files/sha256/$sdk
-rewrite ported-tools\.invalid/sha256/(.*) http://$host:7490/files/sha256/\$1
-EOF
+# Bazel fetches the SDK archive and the ported tools from OS Server's files,
+# by SHA-256, through the downloader config written here
+# (tools/ci/oss_files.sh: its host the first of OSS_SERVERS).
+# shellcheck source=tools/ci/oss_files.sh
+. "$ROOT/tools/ci/oss_files.sh"
+host="$(oss_files_host)"
+write_downloader_config "$work/downloader.cfg" "$host"
 echo "::group::The tests, built on Linux"
 echo "This container: $(nproc) CPUs, $(awk '/MemTotal/ { printf "%.1f GB", $2 / 1048576 }' /proc/meminfo 2> /dev/null) memory"
 run bash -c 'cd "$0" && exec tools/ci/build_mac_tests.sh "$@"' "$ROOT" "$work/mac-tests.tar.gz" \

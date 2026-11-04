@@ -12,7 +12,9 @@
 # as unchanged). A lease's tests take no environment (no
 # SNAPSHOT_RECORD_DIR), so the pictures come from the run's result bundle,
 # where the tests attach every one they take (libraries/pipeline_snapshots),
-# by xcresulttool on this Mac.
+# by xcresulttool. That, and the diffs (CoreGraphics), run on a slot of OS
+# Server's primary Mac (tools/ci/mac_slot.sh), so the script runs on Linux,
+# in a CI job's container.
 #
 #   tools/ci/ios_lease_tests.sh [--proof <dir>] [--logs <dir>] [--kind quick|full]
 #
@@ -27,7 +29,7 @@
 #                       screen the base hasn't got (new, and changed)
 #   diffs/<name>.png    each that changed, faded grey with its changed
 #                       pixels red (tools/ci/snapshot_diff.swift, built
-#                       here)
+#                       on the slot)
 #   proof.json          {"commit", "ref", "kind", "run",
 #                        "base": {"ref", "commit"},
 #                        "screens": [{"name", "changed", "changedPixels"}]}
@@ -61,12 +63,13 @@ while [ $# -gt 0 ]; do
     esac
 done
 case "$kind" in quick | full) ;; *) usage ;; esac
-[ -z "$proof" ] || xcrun --find xcresulttool > /dev/null 2>&1 || { echo "$me: no xcresulttool on this Mac (Xcode's): the pictures can't be read from the result bundle" >&2; exit 1; }
 
 commit="$(git -C "$ROOT" rev-parse HEAD)"
 ref="${PROOF_REF:-${GITHUB_REF:-refs/heads/$(git -C "$ROOT" branch --show-current)}}"
 work="$(mktemp -d)"
 chmod 700 "$work"
+# shellcheck source=tools/ci/mac_slot.sh
+. "$ROOT/tools/ci/mac_slot.sh"
 lease=""
 renewer=""
 finished=""
@@ -83,6 +86,7 @@ cleanup() {
     local status=$?
     [ -n "$finished" ] || [ "$status" -ne 0 ] || status=1
     release
+    mac_slot_release
     rm -rf "$work"
     exit "$status"
 }
@@ -90,11 +94,12 @@ trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-# Making the proof: the diff tool and the proof's base first, nothing built
-# or leased if either fails.
+# Making the proof: the proof's base first (by proof_baseline, Foundation
+# alone, built here), nothing built or leased if it fails.
 if [ -n "$proof" ]; then
-xcrun swiftc -O -o "$work/snapshot_diff" "$ROOT/tools/ci/snapshot_diff.swift"
-xcrun swiftc -O -o "$work/proof_baseline" "$ROOT/tools/ci/proof_baseline/Baseline.swift" "$ROOT/tools/ci/proof_baseline/main.swift"
+swiftc=(swiftc)
+[ "$(uname -s)" != Darwin ] || swiftc=(xcrun swiftc)
+"${swiftc[@]}" -O -o "$work/proof_baseline" "$ROOT/tools/ci/proof_baseline/Baseline.swift" "$ROOT/tools/ci/proof_baseline/main.swift"
 # A release's base is the release before: its tags, asked of origin. A run
 # by hand's (proposing a release, or proving an earlier commit to bisect)
 # is the release before the commit: the tags its history has before it.
@@ -180,18 +185,24 @@ if [ -z "$proof" ]; then
 fi
 
 # The pictures: each attachment of the proof's tests named <screen>.png,
-# exported from its result bundle.
+# exported from its result bundle by xcresulttool, on the slot.
+mac_slot_lease
 mkdir -p "$work/recorded"
 for test in "${tests[@]}"; do
     read -r bundle _ role <<< "$test"
     [ "$role" = proof ] || continue
     result="$work/results/$bundle.xcresult.zip"
     [ -f "$result" ] || { echo "$me: $bundle left no result bundle" >&2; continue; }
-    rm -rf "$work/unzipped" "$work/attachments"
-    mkdir "$work/unzipped" "$work/attachments"
-    ditto -x -k "$result" "$work/unzipped"
-    bundle_path="$(find "$work/unzipped" -maxdepth 2 -name '*.xcresult' -type d | head -1)"
-    xcrun xcresulttool export attachments --path "$bundle_path" --output-path "$work/attachments" > /dev/null
+    rm -rf "$work/attachments"
+    mkdir "$work/attachments"
+    mac_slot_upload "$result" result.xcresult.zip
+    mac_slot_exec bash -c 'rm -rf result attachments && mkdir result attachments \
+        && ditto -x -k result.xcresult.zip result \
+        && bundle="$(find result -maxdepth 2 -name "*.xcresult" -type d | head -1)" \
+        && xcrun xcresulttool export attachments --path "$bundle" --output-path attachments > /dev/null \
+        && tar -czf attachments.tar.gz -C attachments .'
+    mac_slot_download attachments.tar.gz "$work/attachments.tar.gz"
+    tar -xzf "$work/attachments.tar.gz" -C "$work/attachments"
     python3 - "$work/attachments" "$work/recorded" << 'PY'
 import json, os, re, shutil, sys
 source, out = sys.argv[1], sys.argv[2]
@@ -207,30 +218,51 @@ PY
 done
 ls "$work/recorded"
 
-# The proof, from the pictures and the kept ones at the base.
-json() { printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'; }
-mkdir -p "$proof/screens" "$proof/diffs" "$proof/before" "$work/base"
+# Each picture against its kept one at the base, by snapshot_diff on the
+# slot: the pictures and the kept ones go up, the diffs and each one's
+# count of changed pixels come back.
+mkdir -p "$work/compare/recorded" "$work/compare/base"
 snapshots=tests/app_tests/Snapshots
-screens=""
-summary=""
 for picture in "$work/recorded"/*.png; do
     [ -e "$picture" ] || continue
     name="$(basename "$picture" .png)"
-    cp "$picture" "$proof/screens/$name.png"
-    kept="$work/base/$name.png"
-    rm -f "$kept"
+    cp "$picture" "$work/compare/recorded/$name.png"
     if git -C "$ROOT" cat-file -e "$base_commit:$snapshots/$name.png" 2>/dev/null; then
-        git -C "$ROOT" show "$base_commit:$snapshots/$name.png" > "$kept"
+        git -C "$ROOT" show "$base_commit:$snapshots/$name.png" > "$work/compare/base/$name.png"
     fi
-    pixels="$("$work/snapshot_diff" "$kept" "$picture" "$proof/diffs/$name.png")"
+done
+cp "$ROOT/tools/ci/snapshot_diff.swift" "$work/compare/"
+tar -czf "$work/compare.tar.gz" -C "$work/compare" .
+mac_slot_upload "$work/compare.tar.gz" compare.tar.gz
+mac_slot_exec bash -c 'rm -rf compare && mkdir compare && tar -xzf compare.tar.gz -C compare && cd compare \
+    && xcrun swiftc -O -o snapshot_diff snapshot_diff.swift && mkdir diffs \
+    && for picture in recorded/*.png; do
+        [ -e "$picture" ] || continue
+        name="$(basename "$picture" .png)"
+        printf "%s %s\n" "$(./snapshot_diff "base/$name.png" "$picture" "diffs/$name.png")" "$name" >> pixels.txt || exit
+    done; touch pixels.txt && tar -czf ../diffs.tar.gz diffs pixels.txt'
+mac_slot_download diffs.tar.gz "$work/diffs.tar.gz"
+mac_slot_release
+mkdir "$work/diffed"
+tar -xzf "$work/diffs.tar.gz" -C "$work/diffed"
+
+# The proof, from the pictures, the kept ones and their diffs.
+json() { printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'; }
+mkdir -p "$proof/screens" "$proof/diffs" "$proof/before"
+screens=""
+summary=""
+while read -r pixels name; do
+    [ -n "$name" ] || continue
+    cp "$work/recorded/$name.png" "$proof/screens/$name.png"
+    [ ! -e "$work/diffed/diffs/$name.png" ] || cp "$work/diffed/diffs/$name.png" "$proof/diffs/$name.png"
     changed=false
     [ "$pixels" -eq 0 ] || changed=true
-    if [ "$changed" = true ] && [ -e "$kept" ]; then cp "$kept" "$proof/before/$name.png"; fi
+    if [ "$changed" = true ] && [ -e "$work/compare/base/$name.png" ]; then cp "$work/compare/base/$name.png" "$proof/before/$name.png"; fi
     screens="$screens${screens:+,}
     {\"name\": \"$(json "$name")\", \"changed\": $changed, \"changedPixels\": $pixels}"
     summary="$summary| $name | $([ "$changed" = true ] && echo "$pixels pixels changed" || echo unchanged) |
 "
-done
+done < "$work/diffed/pixels.txt"
 cat > "$proof/proof.json" << EOF
 {
   "commit": "$commit",
