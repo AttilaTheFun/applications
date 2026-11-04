@@ -130,9 +130,9 @@ final class ApplicationsTests: XCTestCase {
                        ["com.example.Visor.Beta", "com.example.Visor"])
 
         // Named by the server, the production's id names the beta's too.
-        await server.appNames.set("Visor Isomer", for: "com.example.Visor")
+        await server.appNames.set("Visor Lite", for: "com.example.Visor")
         apps = try await catalog(server)
-        XCTAssertEqual(apps.map(\.app), ["Visor Isomer"])
+        XCTAssertEqual(apps.map(\.app), ["Visor Lite"])
         XCTAssertEqual(apps[0].builds.count, 2)
     }
 
@@ -243,7 +243,7 @@ final class ApplicationsTests: XCTestCase {
     /// notes, groups a build whose own name says another.
     func testABuildsAppComesFromTheServersNamesOrTheNotesMarker() async throws {
         let (server, folder) = try await makeServer()
-        await server.appNames.set("Visor Isomer", for: "com.example.Blue")
+        await server.appNames.set("Visor Lite", for: "com.example.Blue")
         let marked = "Fixes the details sheet.\n<!-- app: Blue Mac -->\n\n## What's new\n- Done"
         for (package, notes) in [(try TestIPA.make(in: folder, bundleID: "com.example.Blue", name: "Visor"), "First build."),
                                  (try TestMacApp.make(in: folder, bundleID: "com.example.BlueMac", name: "Visor", version: "0.23"), marked)] {
@@ -252,7 +252,7 @@ final class ApplicationsTests: XCTestCase {
             XCTAssertEqual(published.status, 201)
         }
         let apps = try await catalog(server)
-        XCTAssertEqual(apps.first { $0.app == "Visor Isomer" }?.builds.map(\.platform), ["ios"])
+        XCTAssertEqual(apps.first { $0.app == "Visor Lite" }?.builds.map(\.platform), ["ios"])
         let mac = try XCTUnwrap(apps.first { $0.app == "Blue Mac" }?.builds.first)
         XCTAssertEqual(mac.notes, "Fixes the details sheet.\n\n## What's new\n- Done", "the marker is not part of the notes")
         XCTAssertNil(apps.first { $0.app == "Visor" })
