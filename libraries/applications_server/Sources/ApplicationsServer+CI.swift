@@ -44,8 +44,7 @@ extension ApplicationsServer {
         var pinned = settings
         pinned.repositoryIDs[name] = id
         do {
-            try pinned.save(to: paths.config)
-            config = pinned
+            try keep(pinned)
             FileManager.default.standardError("applications-server: \(claims.repository) is repository \(id) at GitHub, pinned")
         } catch {
             FileManager.default.standardError("applications-server: \(claims.repository)'s number was not kept: \(error)")

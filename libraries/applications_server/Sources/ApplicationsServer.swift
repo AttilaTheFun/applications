@@ -104,6 +104,13 @@ public actor ApplicationsServer {
         try config.save(to: paths.config)
     }
 
+    /// Settings read from config.json and changed (a repository's number
+    /// pinned, ApplicationsServer+CI): kept, and the server's from now on.
+    func keep(_ settings: ServerConfig) throws {
+        try settings.save(to: paths.config)
+        config = settings
+    }
+
     /// Whether a GitHub login's releases are published as production.
     public func setReleaser(_ login: String, _ releases: Bool) throws {
         config.releasers.removeAll { $0.lowercased() == login.lowercased() }
