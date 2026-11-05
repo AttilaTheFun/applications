@@ -27,9 +27,10 @@ name: CI
 #   the Mac's);
 # - adhoc: the same with --config=adhoc for a pull request's branch run by
 #   hand (workflow_dispatch), which the server takes as an AdHoc build;
-# - release: the same with --config=prod for a push to a release branch
-#   (release-MAJOR-MINOR, cut from a main commit), which the server takes as
-#   production. One bundle id for every build (docs/VARIANTS.md).
+# - release: for a push to a release branch (release-MAJOR-MINOR, cut from
+#   a main commit), nothing built: the server promotes main's Alphas of the
+#   commit to production (tools/ci/promote_from_ci.sh). One bundle id for
+#   every build (docs/VARIANTS.md).
 # No signing key, notary key or password here: the publishing jobs' OIDC
 # token says where their builds came from, and which commit's version
 # they are given.
@@ -229,22 +230,14 @@ jobs:
       # stops here.
       - name: The release is a main commit
         run: git merge-base --is-ancestor HEAD origin/main || { echo "::error::$GITHUB_REF_NAME's commit is not on main"; exit 1; }
-      # From the same line as the Alphas: the release's commit is main's, so
-      # the release is given the version main's Alpha of it was.
-      - name: Version
-        env:
-          APPLICATIONS_CI_CODE: ${{ secrets.APPLICATIONS_CI_CODE }}
-        run: tools/ci/next_version.sh Applications app/Info.mac.plist app/Info.ios.plist
-      # Built as alpha's, the Mac's icon checked the same way.
-      - name: Build
-        run: exec tools/ci/container_build.sh package .ci/packages --config=prod --config=ci_device //app:applications_macos //app:applications_ios
-      - name: The icon's dark appearance
-        run: tools/ci/check_mac_icons.sh .ci/packages
       - name: Notes
         env:
           BODY: ${{ github.event.head_commit.message }}
         run: printf '%s\n' "$BODY" > "$RUNNER_TEMP/notes.md"
-      - name: Publish
+      # Nothing is built: the server promotes the Alphas main's CI published
+      # of this commit, the builds the owner tested, stamped Production and
+      # signed again (docs/CI.md, "Production by promotion").
+      - name: Promote
         env:
           APPLICATIONS_CI_CODE: ${{ secrets.APPLICATIONS_CI_CODE }}
-        run: tools/ci/publish_from_ci.sh --notes-file "$RUNNER_TEMP/notes.md" .ci/packages/*.zip .ci/packages/*.ipa
+        run: tools/ci/promote_from_ci.sh --notes-file "$RUNNER_TEMP/notes.md"
