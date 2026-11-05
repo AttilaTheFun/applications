@@ -5,13 +5,14 @@ import Foundation
 /// of /usr/bin/true), as a .zip or a disk image.
 enum TestMacApp {
     static func make(in folder: URL, bundleID: String = "com.example.VisorMac", name: String = "Visor", version: String = "0.24",
-                     build: String = "24", diskImage: Bool = false, signed: Bool = true) throws -> URL {
+                     build: String = "24", diskImage: Bool = false, signed: Bool = true, variant: String? = nil) throws -> URL {
         let work = folder.appendingPathComponent(UUID().uuidString)
         let app = work.appendingPathComponent("\(name).app/Contents")
         try FileManager.default.createDirectory(at: app.appendingPathComponent("MacOS"), withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: app.appendingPathComponent("Resources"), withIntermediateDirectories: true)
-        let info: [String: Any] = ["CFBundleIdentifier": bundleID, "CFBundleName": name, "CFBundleShortVersionString": version,
+        var info: [String: Any] = ["CFBundleIdentifier": bundleID, "CFBundleName": name, "CFBundleShortVersionString": version,
                                    "CFBundleVersion": build, "CFBundleExecutable": name, "CFBundleIconFile": "AppIcon"]
+        if let variant { info["BuildVariant"] = variant }
         try PropertyListSerialization.data(fromPropertyList: info, format: .xml, options: 0).write(to: app.appendingPathComponent("Info.plist"))
         try FileManager.default.copyItem(at: URL(fileURLWithPath: "/System/Library/CoreServices/CoreTypes.bundle/Contents/Resources/GenericApplicationIcon.icns"),
                                          to: app.appendingPathComponent("Resources/AppIcon.icns"))

@@ -10,6 +10,7 @@
 # publish, its token checked, the builds signed.
 /libraries/applications_server/Sources/APKSignature.swift @AttilaTheFun
 /libraries/applications_server/Sources/ApplicationsServer+CI.swift @AttilaTheFun
+/libraries/applications_server/Sources/ApplicationsServer+Promotion.swift @AttilaTheFun
 /libraries/applications_server/Sources/CIPolicy.swift @AttilaTheFun
 /libraries/applications_server/Sources/CodeSigning.swift @AttilaTheFun
 /libraries/applications_server/Sources/GitHubOIDC.swift @AttilaTheFun
@@ -18,6 +19,7 @@
 /tools/ci/connect_from_ci.sh @AttilaTheFun
 /tools/ci/mac_slot.sh @AttilaTheFun
 /tools/ci/next_version.sh @AttilaTheFun
+/tools/ci/promote_from_ci.sh @AttilaTheFun
 /tools/ci/publish_from_ci.sh @AttilaTheFun
 /tools/install_mac_app.sh @AttilaTheFun
 /tools/signing/ @AttilaTheFun
