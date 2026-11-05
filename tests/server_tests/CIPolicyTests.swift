@@ -288,6 +288,34 @@ final class CIPublishTests: XCTestCase {
         XCTAssertEqual(setup.signing.signed, [])
     }
 
+    /// A repository's number at GitHub is pinned by its first token, and a
+    /// repository given its name later (another number) publishes nothing,
+    /// nor is numbered; `applications-server repo` again lets go of it.
+    func testARepositorysNumberIsPinnedByItsFirstToken() async throws {
+        let setup = try await makeServer()
+        let first = try TestToken.token(TestToken.claims(repositoryID: "1000"), key: setup.key)
+        let published = await publish(setup, try TestIPA.make(in: setup.folder), token: first)
+        XCTAssertEqual(published.status, 201, String(decoding: published.data, as: UTF8.self))
+        let pinned = await setup.server.config.repositoryIDs
+        XCTAssertEqual(pinned, ["attilathefun/visor": "1000"])
+        XCTAssertEqual(ServerConfig.load(ServerPaths(root: setup.folder.appendingPathComponent("support")).config)?.repositoryIDs, ["attilathefun/visor": "1000"], "kept")
+        let usurper = try TestToken.token(TestToken.claims(repositoryID: "2000"), key: setup.key)
+        let refused = await publish(setup, try TestIPA.make(in: setup.folder), token: usurper)
+        XCTAssertEqual(refused.status, 403)
+        XCTAssertTrue(said(refused).contains("AttilaTheFun/visor is repository 2000 at GitHub, not 1000"), said(refused))
+        let numbered = await setup.server.handle(HTTPRequest(method: "POST", path: "/api/next-version",
+                                                             headers: ["authorization": "Bearer " + usurper],
+                                                             body: Data(#"{"app":"Visor","line":"0.23"}"#.utf8), secure: true))
+        XCTAssertEqual(numbered.status, 403)
+        let kept = await setup.server.builds.all()
+        XCTAssertEqual(kept.count, 1)
+        try await setup.server.setRepository("AttilaTheFun/visor", bundleIDs: ["com.example.Visor"])
+        let again = await publish(setup, try TestIPA.make(in: setup.folder), token: usurper)
+        XCTAssertEqual(again.status, 201, String(decoding: again.data, as: UTF8.self))
+        let repinned = await setup.server.config.repositoryIDs
+        XCTAssertEqual(repinned, ["attilathefun/visor": "2000"])
+    }
+
     /// The password still publishes by hand, as before, unsigned by the
     /// server; CI's code carries no password.
     func testThePasswordStillPublishesAndCIsCodeHasNone() async throws {

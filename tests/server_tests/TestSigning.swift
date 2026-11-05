@@ -203,14 +203,15 @@ enum TestToken {
     }
 
     /// The claims of a run: main's push by the owner, unless told otherwise.
-    static func claims(repository: String = "AttilaTheFun/visor", ref: String = "refs/heads/main", refType: String = "branch",
-                       event: String = "push", actor: String = "AttilaTheFun", headRef: String = "",
+    static func claims(repository: String = "AttilaTheFun/visor", repositoryID: String = "1000", ref: String = "refs/heads/main",
+                       refType: String = "branch", event: String = "push", actor: String = "AttilaTheFun", headRef: String = "",
                        sha: String = "0123456789abcdef0123456789abcdef01234567", audience: String = "applications-server",
                        issuer: String = "https://token.actions.githubusercontent.com", now: Date = Date(),
                        expiresIn: TimeInterval = 300) -> [String: Any] {
         let issued = Int(now.timeIntervalSince1970) - 5
         return ["iss": issuer, "aud": audience, "iat": issued, "nbf": issued, "exp": issued + Int(expiresIn),
-                "sub": "repo:\(repository):ref:\(ref)", "repository": repository, "repository_owner": "AttilaTheFun", "ref": ref,
+                "sub": "repo:\(repository):ref:\(ref)", "repository": repository, "repository_id": repositoryID,
+                "repository_owner": "AttilaTheFun", "ref": ref,
                 "ref_type": refType, "sha": sha, "event_name": event, "actor": actor, "head_ref": headRef, "base_ref": "",
                 "run_id": "4242", "workflow_ref": "\(repository)/.github/workflows/ci.yml@\(ref)"]
     }

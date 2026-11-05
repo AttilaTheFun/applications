@@ -28,6 +28,7 @@ final class OIDCTests: XCTestCase {
         XCTAssertFalse(GitHubOIDC.isToken("amber-birch-cedar-1234"), "a password is not a token")
         let claims = try await oidc.verify(token, audience: audience)
         XCTAssertEqual(claims.repository, "AttilaTheFun/visor")
+        XCTAssertEqual(claims.repositoryID, "1000")
         XCTAssertEqual(claims.ref, "refs/pull/12/merge")
         XCTAssertEqual(claims.refType, "branch")
         XCTAssertEqual(claims.sha, "0123456789abcdef0123456789abcdef01234567")
@@ -44,6 +45,16 @@ final class OIDCTests: XCTestCase {
         let main = try await oidc.verify(try TestToken.token(several, key: key), audience: audience)
         XCTAssertEqual(main.branch, "main")
         XCTAssertNil(main.pullRequest)
+        // GitHub's repository_id is a string; a number is read as one.
+        var numbered = TestToken.claims()
+        numbered["repository_id"] = 1_234
+        let read = try await oidc.verify(try TestToken.token(numbered, key: key), audience: audience)
+        XCTAssertEqual(read.repositoryID, "1234")
+        // A token that says no repository number is not one the server can pin.
+        var unnumbered = TestToken.claims()
+        unnumbered.removeValue(forKey: "repository_id")
+        let said = await refusal(oidc, try TestToken.token(unnumbered, key: key))
+        XCTAssertEqual(said, "It says no repository_id")
     }
 
     func testAnExpiredTokenIsRefused() async throws {
@@ -128,6 +139,7 @@ final class OIDCTests: XCTestCase {
         let later = now.addingTimeInterval(120)
         let claims = try await oidc.verify(try TestToken.token(TestToken.claims(now: later), key: next), audience: audience, now: later)
         XCTAssertEqual(claims.repository, "AttilaTheFun/visor")
+        XCTAssertEqual(claims.repositoryID, "1000")
         let twice = await source.fetches
         XCTAssertEqual(twice, 2)
     }

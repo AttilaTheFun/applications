@@ -96,10 +96,19 @@ public actor ApplicationsServer {
     /// given is taken as its production's); none: it publishes nothing.
     public func setRepository(_ repository: String, bundleIDs: [String]) throws {
         config.repositories = config.repositories.filter { $0.key.lowercased() != repository.lowercased() }
+        // Its number is pinned again by its next token.
+        config.repositoryIDs[repository.lowercased()] = nil
         var ids: [String] = []
         for id in bundleIDs.map(BundleVariant.productionID) where !ids.contains(id) { ids.append(id) }
         if !ids.isEmpty { config.repositories[repository] = ids }
         try config.save(to: paths.config)
+    }
+
+    /// Settings read from config.json and changed (a repository's number
+    /// pinned, ApplicationsServer+CI): kept, and the server's from now on.
+    func keep(_ settings: ServerConfig) throws {
+        try settings.save(to: paths.config)
+        config = settings
     }
 
     /// Whether a GitHub login's releases are published as production.

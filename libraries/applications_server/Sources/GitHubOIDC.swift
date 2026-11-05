@@ -12,6 +12,9 @@ import Security
 public struct CIClaims: Sendable, Equatable {
     /// owner/name.
     public var repository: String
+    /// The repository's number at GitHub, which its name may be given to
+    /// another repository but this never is (`repository_id`).
+    public var repositoryID: String
     /// refs/heads/<branch>, refs/tags/<tag>, refs/pull/<n>/merge.
     public var ref: String
     /// "branch" or "tag".
@@ -28,9 +31,10 @@ public struct CIClaims: Sendable, Equatable {
     /// A pull request's branch; empty for any other event.
     public var headRef: String
 
-    public init(repository: String, ref: String, refType: String, sha: String, eventName: String, actor: String, runID: String = "",
-                workflowRef: String = "", headRef: String = "") {
+    public init(repository: String, repositoryID: String = "", ref: String, refType: String, sha: String, eventName: String, actor: String,
+                runID: String = "", workflowRef: String = "", headRef: String = "") {
         self.repository = repository
+        self.repositoryID = repositoryID
         self.ref = ref
         self.refType = refType
         self.sha = sha
@@ -138,10 +142,10 @@ public actor GitHubOIDC {
             if let value = claims[name] as? NSNumber { return value.stringValue }
             return ""
         }
-        let verified = CIClaims(repository: text("repository"), ref: text("ref"), refType: text("ref_type"), sha: text("sha"),
+        let verified = CIClaims(repository: text("repository"), repositoryID: text("repository_id"), ref: text("ref"), refType: text("ref_type"), sha: text("sha"),
                                 eventName: text("event_name"), actor: text("actor"), runID: text("run_id"),
                                 workflowRef: text("workflow_ref"), headRef: text("head_ref"))
-        for (name, value) in [("repository", verified.repository), ("ref", verified.ref), ("sha", verified.sha),
+        for (name, value) in [("repository", verified.repository), ("repository_id", verified.repositoryID), ("ref", verified.ref), ("sha", verified.sha),
                               ("event_name", verified.eventName), ("actor", verified.actor)] where value.isEmpty {
             throw Refusal("It says no \(name)")
         }
