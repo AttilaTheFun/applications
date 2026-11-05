@@ -42,8 +42,9 @@ on:
   pull_request:
   push:
     # main's commits, and the owner's releases: a release-MAJOR-MINOR branch,
-    # cut from a main commit.
-    branches: [main, 'release-*']
+    # cut from a main commit (only that: a branch merely named release-… is
+    # no release).
+    branches: [main, 'release-[0-9]+-[0-9]+']
   # A proof by hand (ios-tests).
   workflow_dispatch:
 # A pull request's newer push cancels its older run; every push to main and
