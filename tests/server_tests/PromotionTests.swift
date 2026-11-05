@@ -102,7 +102,8 @@ final class PromotionTests: XCTestCase {
         let info = try ProcessRunner.run("/usr/bin/hdiutil", ["imageinfo", image.path])
         XCTAssertTrue(String(decoding: info, as: UTF8.self).contains("UDZO"), "a compressed image")
         XCTAssertTrue(resigned.contains { $0.path.hasSuffix(".dmg") && $0.identity == TestProfile.sha1(.developerID) && $0.timestamp == true })
-        XCTAssertTrue(setup.signing.events.all.contains("staple " + image.lastPathComponent))
+        // Stapled as it was made, before it was moved in beside the build.
+        XCTAssertTrue(setup.signing.events.all.contains { $0.hasPrefix("staple ") && $0.hasSuffix(".dmg") })
         let download = await setup.server.handle(HTTPRequest(method: "GET", path: "/builds/\(mac.id)/\(mac.downloadKey)/app.dmg", secure: true))
         XCTAssertEqual(download.status, 200)
         XCTAssertEqual(download.headers["Content-Type"], "application/x-apple-diskimage")
