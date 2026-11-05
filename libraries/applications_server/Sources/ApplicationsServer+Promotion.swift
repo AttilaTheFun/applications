@@ -10,6 +10,10 @@ import PipelineServer
 /// its `BuildVariant` made Production, signed again for production (an
 /// iPhone app with the distribution identity, its scheme given; a Mac app
 /// with Developer ID, notarized) and kept as production beside the Alpha.
+/// A Mac app's production build is given a disk image too (app.dmg: the
+/// app and a link to /Applications, signed, notarized and stapled), which
+/// the release job downloads to hand out with its release:
+/// `GET /builds/<id>/<downloadKey>/app.dmg`.
 ///
 ///     POST /api/promote    Authorization: Bearer <the release job's OIDC token>, over HTTPS
 ///                          X-Applications-Notes (base64): the release's notes. The token's commit's Alphas of its
@@ -79,7 +83,7 @@ extension ApplicationsServer {
                 continue
             }
             guard let package = builds.package(alpha.id) else { throw NothingToPromote("\(alpha.bundleID) \(alpha.versionTitle)'s package is gone") }
-            let readied = try await Self.offActor { () throws -> Readied in
+            let readied = try await Self.offActor { () throws -> (readied: Readied, diskImage: URL?) in
                 let file = FileManager.default.temporaryDirectory.appendingPathComponent("promote-" + UUID().uuidString)
                     .appendingPathExtension(package.pathExtension)
                 try FileManager.default.copyItem(at: package, to: file)
@@ -88,12 +92,22 @@ extension ApplicationsServer {
                 try CIPolicy.checkVariant(metadata.buildVariant, version: metadata.version, channel: .production, claims: claims)
                 let origin = BuildOrigin(commit: claims.sha)
                 let buildScheme = try builds.ready(file, metadata: metadata, channel: .production, commit: origin.commit, signer: signer)
-                return Readied(file: file, metadata: metadata, channel: .production, origin: origin, buildScheme: buildScheme)
+                var diskImage: URL?
+                if alpha.platform == "macos" {
+                    let dmg = file.deletingPathExtension().appendingPathExtension("dmg")
+                    if case .skipped(let why) = try signer.diskImage(ofMacZip: file, volume: metadata.name, to: dmg) {
+                        FileManager.default.standardError("applications-server: \(metadata.bundleID) \(metadata.version)'s disk image is "
+                                                          + "signed, not notarized: \(why)")
+                    }
+                    diskImage = dmg
+                }
+                return (Readied(file: file, metadata: metadata, channel: .production, origin: origin, buildScheme: buildScheme), diskImage)
             }
             let channels = channels.snapshot(names: appNames.all())
-            let build = try builds.keep(readied.file, metadata: readied.metadata, buildScheme: readied.buildScheme,
-                                        notes: notes.isEmpty ? alpha.notes : notes, app: alpha.app, origin: readied.origin,
+            let build = try builds.keep(readied.readied.file, metadata: readied.readied.metadata, buildScheme: readied.readied.buildScheme,
+                                        notes: notes.isEmpty ? alpha.notes : notes, app: alpha.app, origin: readied.readied.origin,
                                         channel: .production) { channels.channel(of: $0) == .production }
+            if let dmg = readied.diskImage { try builds.keepDiskImage(dmg, for: build.id) }
             FileManager.default.standardError("applications-server: \(claims.repository)'s run \(claims.runID) (\(claims.workflowRef), "
                                               + "\(claims.eventName) by \(claims.actor)) promoted \(alpha.bundleID) "
                                               + "\(alpha.versionTitle) (\(alpha.platform)) to production")

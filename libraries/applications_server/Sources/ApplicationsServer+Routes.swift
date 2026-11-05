@@ -126,6 +126,11 @@ extension ApplicationsServer {
             } catch {
                 return .error("Not an .ipa, a Mac app or an .apk this server reads: \(error)", status: 400)
             }
+        // A promoted Mac build's notarized disk image (ApplicationsServer+Promotion).
+        case "app.dmg":
+            guard let dmg = builds.diskImage(build.id) else { return .error("No disk image", status: 404) }
+            let size = ((try? FileManager.default.attributesOfItem(atPath: dmg.path)[.size]) as? NSNumber)?.int64Value ?? 0
+            return HTTPResponse(status: 200, headers: ["Content-Type": "application/x-apple-diskimage"], body: .file(dmg, size: size))
         default:
             return .error("Nothing here", status: 404)
         }
