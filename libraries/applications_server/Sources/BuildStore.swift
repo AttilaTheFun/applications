@@ -65,6 +65,21 @@ public struct BuildStore: Sendable {
             .first { FileManager.default.fileExists(atPath: $0.path) }
     }
 
+    /// A Mac build's disk image (app.dmg), made when it was promoted to
+    /// production, if it has one.
+    public func diskImage(_ id: String) -> URL? {
+        guard Self.isID(id) else { return nil }
+        let dmg = buildFolder(id).appendingPathComponent("app.dmg")
+        return FileManager.default.fileExists(atPath: dmg.path) ? dmg : nil
+    }
+
+    /// A disk image moved in beside a kept build's package.
+    func keepDiskImage(_ file: URL, for id: String) throws {
+        let destination = buildFolder(id).appendingPathComponent("app.dmg")
+        try? FileManager.default.removeItem(at: destination)
+        try FileManager.default.moveItem(at: file, to: destination)
+    }
+
     public func icon(_ id: String) -> Data? {
         guard Self.isID(id) else { return nil }
         return try? Data(contentsOf: buildFolder(id).appendingPathComponent("icon.png"))

@@ -440,7 +440,7 @@ that does not verify).
 identical today modulo the plist key. I test an alpha build and when I'm
 happy with it we promote it to a release which stamps it."
 
-    tools/ci/promote_from_ci.sh [--notes-file <notes.md>]
+    tools/ci/promote_from_ci.sh [--notes-file <notes.md>] [--dmg-dir <dir>]
 
     POST /api/promote    Authorization: Bearer <the release job's OIDC token>, over HTTPS
                          X-Applications-Notes (base64): the release's notes.
@@ -456,7 +456,14 @@ id and platform, among the token's repository's), the server:
    production identity and its scheme given, a Mac app with Developer ID,
    notarized and stapled;
 3. keeps it as production, of the same version, beside the Alpha, which
-   stays as it was.
+   stays as it was;
+4. for a Mac app, makes a disk image of the production app too (the app
+   and a link to /Applications, signed with Developer ID, notarized and
+   stapled), kept beside it as app.dmg, which downloads by the build's key
+   like its package: `GET /builds/<id>/<downloadKey>/app.dmg`.
+   `promote_from_ci.sh --dmg-dir <dir>` saves each there as
+   `<Name>-<version>.dmg`, for the release job to hand out with its
+   release. It is the build the owner tested, not a rebuild.
 
 The token must be a release's (CIPolicy, above): a release branch's push,
 or a `v*` tag's, by a releaser. The server answers 201 with the production
