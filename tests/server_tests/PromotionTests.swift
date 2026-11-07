@@ -93,11 +93,36 @@ final class PromotionTests: XCTestCase {
         XCTAssertEqual(resigned.first { $0.path == "Visor.app" && $0.identity == TestProfile.sha1(.distribution) }?.profile,
                        TestProfile.name("ad hoc", "com.example.Visor"))
         XCTAssertTrue(resigned.contains { $0.identity == TestProfile.sha1(.developerID) && $0.hardenedRuntime })
+        // The Mac's production build has a disk image beside it, signed with
+        // Developer ID, notarized and stapled; it downloads by its key. The
+        // iPhone's has none.
+        let mac = try XCTUnwrap(builds.first { $0.platform == "macos" })
+        let dmg = await setup.server.builds.diskImage(mac.id)
+        let image = try XCTUnwrap(dmg)
+        let info = try ProcessRunner.run("/usr/bin/hdiutil", ["imageinfo", image.path])
+        XCTAssertTrue(String(decoding: info, as: UTF8.self).contains("UDZO"), "a compressed image")
+        XCTAssertTrue(resigned.contains { $0.path.hasSuffix(".dmg") && $0.identity == TestProfile.sha1(.developerID) && $0.timestamp == true })
+        // Stapled as it was made, before it was moved in beside the build.
+        XCTAssertTrue(setup.signing.events.all.contains { $0.hasPrefix("staple ") && $0.hasSuffix(".dmg") })
+        let download = await setup.server.handle(HTTPRequest(method: "GET", path: "/builds/\(mac.id)/\(mac.downloadKey)/app.dmg", secure: true))
+        XCTAssertEqual(download.status, 200)
+        XCTAssertEqual(download.headers["Content-Type"], "application/x-apple-diskimage")
+        let none = await setup.server.handle(HTTPRequest(method: "GET", path: "/builds/\(phone.id)/\(phone.downloadKey)/app.dmg", secure: true))
+        XCTAssertEqual(none.status, 404)
+        let wrongKey = await setup.server.handle(HTTPRequest(method: "GET", path: "/builds/\(mac.id)/nope/app.dmg", secure: true))
+        XCTAssertEqual(wrongKey.status, 404)
         // The Alphas stay as they were.
         for alpha in alphas {
             let kept = await setup.server.builds.package(alpha.id)
             XCTAssertEqual(try IPAMetadata.read(try XCTUnwrap(kept)).buildVariant, "Alpha")
         }
+        // A Mac build promoted before the server made disk images is given
+        // one when its promotion is asked for again.
+        try FileManager.default.removeItem(at: image)
+        let backfill = await post(setup, "/api/promote", token: release)
+        XCTAssertEqual(backfill.status, 201, String(decoding: backfill.data, as: UTF8.self))
+        let made = await setup.server.builds.diskImage(mac.id)
+        XCTAssertNotNil(made, "the disk image made for the build promoted before")
         // Asked again, by the commit's v* tag (as releases were before release branches): the same builds.
         let tag = try TestToken.token(TestToken.claims(ref: "refs/tags/v0.23.4", refType: "tag", event: "release", sha: commit),
                                       key: setup.key)

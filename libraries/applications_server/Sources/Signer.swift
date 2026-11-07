@@ -103,6 +103,35 @@ public struct Signer: Sendable {
         return result
     }
 
+    /// A disk image of a signed Mac app's .zip, made at `dmg`: the app
+    /// beside a link to /Applications, as a Mac app is handed out outside
+    /// Applications; signed with Developer ID, then notarized and stapled
+    /// when the notary does. What notarizing it came to.
+    public func diskImage(ofMacZip zip: URL, volume: String, to dmg: URL, now: Date = Date()) throws -> NotaryResult {
+        let work = try Self.workFolder()
+        defer { try? FileManager.default.removeItem(at: work) }
+        let root = work.appendingPathComponent("package", isDirectory: true)
+        try ProcessRunner.run("/usr/bin/ditto", ["-x", "-k", zip.path, root.path])
+        guard let name = ((try? FileManager.default.contentsOfDirectory(atPath: root.path)) ?? []).first(where: { $0.hasSuffix(".app") }) else {
+            throw PackageCheck.Refusal("No app in it")
+        }
+        let app = root.appendingPathComponent(name)
+        let bundleID = try Self.bundleID(of: app)
+        let profile = profiles.macProfile(for: bundleID, now: now)
+        let identity = try developerID(team: profile?.team ?? (profiles.team() ?? team), profile: profile)
+        let stage = work.appendingPathComponent("image", isDirectory: true)
+        try FileManager.default.createDirectory(at: stage, withIntermediateDirectories: true)
+        try FileManager.default.moveItem(at: app, to: stage.appendingPathComponent(name))
+        try FileManager.default.createSymbolicLink(atPath: stage.appendingPathComponent("Applications").path, withDestinationPath: "/Applications")
+        try? FileManager.default.removeItem(at: dmg)
+        try ProcessRunner.run("/usr/bin/hdiutil", ["create", "-quiet", "-volname", volume, "-srcfolder", stage.path, "-format", "UDZO",
+                                                   "-fs", "APFS", dmg.path])
+        try tools.sign(dmg, SigningRequest(identity: identity, timestamp: true))
+        let result = try notary.notarize(dmg)
+        if case .accepted = result { try notary.staple(dmg) }
+        return result
+    }
+
     // MARK: iPhone
 
     /// What signing an iPhone app takes, inside out: each piece of code in
