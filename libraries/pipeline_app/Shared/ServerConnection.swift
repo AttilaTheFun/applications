@@ -41,13 +41,17 @@ final class ServerConnection {
     private static let codeAccount = "server"
 
     /// Takes the code kept, or one given at launch (`-<kind>.code <code>`,
-    /// as a simulator is started for a look) as if pasted.
+    /// as a simulator is started for a look, or written to the app's
+    /// defaults to pair it unattended) as if pasted. One written to the
+    /// defaults is taken out of them once it is in the Keychain: the code
+    /// carries the password.
     init(serverName: String, kind: String, scheme: String) {
         self.serverName = serverName
         self.kind = kind
         self.scheme = scheme
         if let given = UserDefaults.standard.string(forKey: kind + ".code"), ConnectionCode(parsing: given) != nil {
             Keychain.set(Self.codeAccount, given)
+            UserDefaults.standard.removeObject(forKey: kind + ".code")
         }
         if let code = ConnectionCode(parsing: Keychain.get(Self.codeAccount)) { use(code) }
         network = NetworkWatch { [weak self] shape, denied in

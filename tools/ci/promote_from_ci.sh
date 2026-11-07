@@ -64,9 +64,13 @@ fi
 # One line a build: the answer is a JSON array of them, each one's keys
 # sorted, so its last is its version.
 awk '{ gsub(/"version":"[^"]*"/, "&\n"); print }' "$work/answer" | grep '"bundleID"' > "$work/builds" || true
+field() { printf '%s' "$build" | sed -n "s/.*\"$1\":\"\\([^\"]*\\)\".*/\\1/p"; }
+# Every build promoted said first, then the disk images: one that fails
+# leaves none of the builds unsaid.
 while IFS= read -r build; do
-  field() { printf '%s' "$build" | sed -n "s/.*\"$1\":\"\\([^\"]*\\)\".*/\\1/p"; }
   echo "Promoted $(field name) $(field version) ($(field bundleID), $(field platform)): build $(field id)"
+done < "$work/builds"
+while IFS= read -r build; do
   if [ -n "$dmg_dir" ] && [ "$(field platform)" = macos ]; then
     dmg="$dmg_dir/$(field name | tr ' ' '-')-$(field version).dmg"
     status="$(curl -sS --cacert "$work/ca.pem" --connect-timeout 10 --max-time 1800 -o "$dmg" -w '%{http_code}' \
