@@ -26,7 +26,8 @@ what comes next.
 - **Nothing goes to main but through a pull request.** Agents merge their
   own once CI is green and the branch is up to date with main, except those
   that touch a protected file (.github/CODEOWNERS: CI, publishing and
-  signing, the agents' rules, the license), which need the owner's review.
+  signing, the license), which need the owner's review. This file is
+  context, not a boundary: agents may edit it.
 - **Build and test on Linux, in a container:** `tools/ci/container_build.sh`
   builds in the Linux container it runs in (or, run on the Mac, leases one
   from OS Server), the apps and the server with
