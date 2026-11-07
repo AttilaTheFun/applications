@@ -17,11 +17,12 @@ at a main commit.
 2. The owner looks at the proof and cuts the release branch at that
    commit.
 3. The push starts the repository's release job, which checks the branch's
-   commit is main's, builds with `--config=prod` (Production: the same
-   bundle id, its Info.plist's `BuildVariant` "Production",
-   docs/VARIANTS.md) and publishes to the server with its token. The token's
-   ref, `refs/heads/release-*`, pushed by a releaser, is what the server
-   takes as production. Nothing else makes a build production, and the
+   commit is main's and, building nothing, has the server promote main's
+   Alphas of that commit with its token: the builds the owner tested,
+   stamped Production (the same bundle id, its Info.plist's `BuildVariant`
+   "Production", docs/VARIANTS.md) and signed again ("Production by
+   promotion", below). The token's ref, `refs/heads/release-*`, pushed by a
+   releaser, is what the server takes as a release. Nothing else makes a build production, and the
    server asks nobody else first: the token is the approval.
 
 There are no GitHub environments: a private repository on the owner's
@@ -143,7 +144,7 @@ back however it ends:
 | `ios-tests` | pull requests, main, by hand | `tools/ci/ios_lease_tests.sh`: the iPhone and iPad tests built on Linux and run on an iOS lease (`oss machine xctest`); by hand alone, then the proof from their result bundle (below: "Tests on an iOS lease") |
 | `alpha` | main, after `linux` | the Alpha (`--config=alpha`): the version stamped in (tools/ci/next_version.sh, below: "Versions"), the Mac app and the iPhone and iPad app built with `--config=alpha` in the job's container (`tools/ci/container_build.sh package`; the iPhone's a device build signed ad hoc, below: "The iPhone app"), the Mac's icon checked for the dark appearance on a Mac slot (`tools/ci/check_mac_icons.sh`), and both published with tools/ci/publish_from_ci.sh: a beta, which the server signs (the Mac's with Developer ID, notarized; the iPhone's with the development identity and profiles) |
 | `adhoc` | by hand (`workflow_dispatch`) on a branch that is neither main nor a release branch | the same with `--config=adhoc`: an AdHoc build, which the server keeps a week (docs/VARIANTS.md) |
-| `release` | a push to a `release-*` branch | the same with `--config=prod` once the branch's commit is found on main: production |
+| `release` | a push to a `release-*` branch | nothing built: once the branch's commit is found on main, `tools/ci/promote_from_ci.sh` has the server promote main's Alphas of it to production |
 
 A pull request's run is `linux` and `ios-tests`: the apps, the server and
 the tests built on Linux, the tests Linux runs, and the iPhone and iPad
@@ -494,11 +495,10 @@ above in the repository.
 - **The on-main check** for a release's commit, on the server (above): the
   release job checks it, the server doesn't yet.
 - **The release job is untested.** It runs only for a release branch the
-  owner pushes, and none has been pushed since it was added. Its first
-  run is the test: the on-main check, its version (main's Alpha's, for
-  its commit), `--config=prod` built in the Linux container, the
-  iPhone's app among it, and the server taking the release branch's
-  token as production.
+  owner pushes, and none has been pushed since it was switched to
+  promotion. Its first run is the test: the on-main check, the server
+  taking the release branch's token as a release, and its promoting the
+  commit's iPhone and Mac Alphas (signed again, the Mac's notarized).
 - **The Mac's pictures in CI.** mac-tests runs the Mac's tests without
   comparing their pictures (a VM draws the sidebar blank). A runner on a
   real Mac's login session, or a VM that draws it, would compare them.
