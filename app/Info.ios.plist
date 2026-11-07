@@ -9,6 +9,7 @@
 	<key>LSApplicationQueriesSchemes</key>
 	<array>
 		<string>iso-playground</string>
+		<string>issues</string>
 		<string>osmonitor</string>
 		<string>playground</string>
 		<string>reviews</string>
