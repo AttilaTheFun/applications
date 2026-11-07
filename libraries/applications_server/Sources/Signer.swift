@@ -108,6 +108,17 @@ public struct Signer: Sendable {
     /// Applications; signed with Developer ID, then notarized and stapled
     /// when the notary does. What notarizing it came to.
     public func diskImage(ofMacZip zip: URL, volume: String, to dmg: URL, now: Date = Date()) throws -> NotaryResult {
+        // One at a time on this Mac: two hdiutils making volumes of one name
+        // at once (two releases' promotions) left one hung.
+        try Self.diskImages.withLock { try makeDiskImage(ofMacZip: zip, volume: volume, to: dmg, now: now) }
+    }
+
+    /// Held while a disk image is made.
+    static let diskImages = NSLock()
+    /// How long hdiutil may take to make one (a large app's, minutes).
+    static let diskImageTimeout: TimeInterval = 15 * 60
+
+    private func makeDiskImage(ofMacZip zip: URL, volume: String, to dmg: URL, now: Date) throws -> NotaryResult {
         let work = try Self.workFolder()
         defer { try? FileManager.default.removeItem(at: work) }
         let root = work.appendingPathComponent("package", isDirectory: true)
@@ -125,7 +136,7 @@ public struct Signer: Sendable {
         try FileManager.default.createSymbolicLink(atPath: stage.appendingPathComponent("Applications").path, withDestinationPath: "/Applications")
         try? FileManager.default.removeItem(at: dmg)
         try ProcessRunner.run("/usr/bin/hdiutil", ["create", "-quiet", "-volname", volume, "-srcfolder", stage.path, "-format", "UDZO",
-                                                   "-fs", "APFS", dmg.path])
+                                                   "-fs", "APFS", dmg.path], timeout: Self.diskImageTimeout)
         try tools.sign(dmg, SigningRequest(identity: identity, timestamp: true))
         let result = try notary.notarize(dmg)
         if case .accepted = result { try notary.staple(dmg) }
