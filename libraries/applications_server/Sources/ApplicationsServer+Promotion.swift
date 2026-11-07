@@ -79,6 +79,22 @@ extension ApplicationsServer {
         var promoted: [Build] = []
         for alpha in alphas {
             if let before = kept.first(where: { $0.channel == .production && $0.bundleID == alpha.bundleID && $0.platform == alpha.platform }) {
+                // Promoted before this server made disk images: its disk image
+                // made now, of the production build kept, so asking again
+                // gives the release what it lacked.
+                if before.platform == "macos", builds.diskImage(before.id) == nil, let package = builds.package(before.id) {
+                    let dmg = try await Self.offActor { () throws -> URL in
+                        let dmg = FileManager.default.temporaryDirectory.appendingPathComponent("promote-" + UUID().uuidString + ".dmg")
+                        if case .skipped(let why) = try signer.diskImage(ofMacZip: package, volume: before.name, to: dmg) {
+                            FileManager.default.standardError("applications-server: \(before.bundleID) \(before.version)'s disk image is "
+                                                              + "signed, not notarized: \(why)")
+                        }
+                        return dmg
+                    }
+                    try builds.keepDiskImage(dmg, for: before.id)
+                    FileManager.default.standardError("applications-server: \(before.bundleID) \(before.versionTitle) (macos), promoted "
+                                                      + "before, given its disk image")
+                }
                 promoted.append(before)
                 continue
             }

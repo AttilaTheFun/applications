@@ -116,6 +116,13 @@ final class PromotionTests: XCTestCase {
             let kept = await setup.server.builds.package(alpha.id)
             XCTAssertEqual(try IPAMetadata.read(try XCTUnwrap(kept)).buildVariant, "Alpha")
         }
+        // A Mac build promoted before the server made disk images is given
+        // one when its promotion is asked for again.
+        try FileManager.default.removeItem(at: image)
+        let backfill = await post(setup, "/api/promote", token: release)
+        XCTAssertEqual(backfill.status, 201, String(decoding: backfill.data, as: UTF8.self))
+        let made = await setup.server.builds.diskImage(mac.id)
+        XCTAssertNotNil(made, "the disk image made for the build promoted before")
         // Asked again, by the commit's v* tag (as releases were before release branches): the same builds.
         let tag = try TestToken.token(TestToken.claims(ref: "refs/tags/v0.23.4", refType: "tag", event: "release", sha: commit),
                                       key: setup.key)
