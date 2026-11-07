@@ -7,7 +7,7 @@ build says in its Info.plist's `BuildVariant`:
 |  | Alpha | Beta | Production | AdHoc |
 | --- | --- | --- | --- | --- |
 | `BuildVariant` | `Alpha` | `Beta` | `Production` | `AdHoc` |
-| Built | by default (`--config=alpha`): every main and pull request build, and every agent's | `--config=beta`: TestFlight's, for later (unused for now) | by CI's release job alone (`--config=prod`), on a release branch the owner cut at a main commit | by CI's adhoc job (`--config=adhoc`), when a pull request's branch is run by hand (`workflow_dispatch`) |
+| Built | by default (`--config=alpha`): every main and pull request build, and every agent's | `--config=beta`: TestFlight's, for later (unused for now) | by CI's release job alone, on a release branch the owner cut at a main commit: main's Alpha of it, promoted (its `BuildVariant` made Production as the server signs it), or built with `--config=prod` where a repository's release job still builds | by CI's adhoc job (`--config=adhoc`), when a pull request's branch is run by hand (`workflow_dispatch`) |
 | Published | by CI with its token, main's commits (by hand, `applications-server publish`) | — | by CI's release job with its token, alone | by CI's adhoc job with its token, from a branch that is neither main nor a release branch |
 | Signed, CI's | by the server: the development identity and profile | — | by the server: the production identity, ad hoc profiles where it has them | as an Alpha |
 | On Applications Server | a beta: no build scheme, never numbered; each bundle's newest kept, the rest for a week | kept two weeks (each bundle's newest for good) | its build scheme on an iPhone; kept for good | kept a week, the newest too |
@@ -105,9 +105,11 @@ each build is; the server signs it (docs/CI.md).
   for no build scheme. A pull request's run builds and tests; it publishes
   nothing.
 - **The release job**, on a push to a `release-MAJOR-MINOR` branch the
-  owner cut at a main commit, builds with `--config=prod` and publishes the
-  same way: production, signed with the production identity, its scheme
-  given on an iPhone as the server signs it.
+  owner cut at a main commit, builds nothing: the server promotes main's
+  Alphas of the commit, each copied with its `BuildVariant` made
+  Production and signed with the production identity, its scheme given on
+  an iPhone (docs/CI.md, "Production by promotion"). `--config=prod` stays
+  for repositories whose release jobs still build.
 - **The adhoc job**, when a pull request's branch (neither main nor a
   release branch) is run by hand (`workflow_dispatch`), builds with
   `--config=adhoc` and publishes the same way: an AdHoc build, signed as an
